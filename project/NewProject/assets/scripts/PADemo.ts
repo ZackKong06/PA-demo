@@ -67,6 +67,7 @@ export class PADemo extends Component {
     private unitNodes: Node[] = [];
     private enemies: EnemyEntity[] = [];
     private walls: TrackItemEntity[] = [];
+    private megaWalls: TrackItemEntity[] = [];
     private woodenFences: TrackItemEntity[] = [];
     private agilityPickups: TrackItemEntity[] = [];
     private roadStripes: Node[] = [];
@@ -81,6 +82,11 @@ export class PADemo extends Component {
     private dragging = false;
     private lastPointerX = 0;
     private playerSpeed = 1;
+    private bonusActive = false;
+    private bonusCompleted = false;
+    private bonusTimer = 0;
+    private bonusParticleTimer = 0;
+    private readonly bonusDuration = 10;
 
     private squadLabel!: Label;
     private distanceLabel!: Label;
@@ -137,6 +143,9 @@ export class PADemo extends Component {
             this.updateRoad(dt);
             this.updateEnemies(dt);
             this.updateTrackItems(dt);
+            if (this.bonusActive) {
+                this.updateBonusRound(dt);
+            }
             this.updateHud();
         } else if (this.state === GameState.WIN || this.state === GameState.LOSE) {
             this.endTimer += dt;
@@ -320,6 +329,33 @@ export class PADemo extends Component {
             }
         }
         this.walls.push({ node, width: 0.82, collected: false });
+    }
+
+    private spawnMegaWall(z: number): void {
+        const node = new Node('Bonus Mega Wall');
+        node.setParent(this.world);
+        node.setPosition(0, 0, z);
+        const wallColor = new Color(246, 248, 250);
+        this.factory.createCylinder(
+            'Mega Wall Base',
+            node,
+            new Vec3(0, 0.03, 0),
+            new Vec3(3.15, 0.05, 1.05),
+            new Color(255, 72, 82),
+        );
+        for (let row = 0; row < 4; row++) {
+            for (let column = 0; column < 5; column++) {
+                const offset = row % 2 === 0 ? 0 : 0.18;
+                this.factory.createBox(
+                    'Mega Wall Block',
+                    node,
+                    new Vec3((column - 2) * 0.68 + offset, 0.34 + row * 0.58, 0),
+                    new Vec3(0.62, 0.52, 0.48),
+                    row % 2 === 0 ? wallColor : new Color(226, 232, 236),
+                );
+            }
+        }
+        this.megaWalls.push({ node, width: 2.75, collected: false });
     }
 
     private spawnWoodFence(x: number, z: number): void {
@@ -656,7 +692,7 @@ export class PADemo extends Component {
                                 )
                                 .call(() => {
                                     enemy.node.destroy();
-                                    this.finish(GameState.WIN);
+                                    this.startBonusRound();
                                 })
                                 .start();
                         } else {
@@ -739,6 +775,80 @@ export class PADemo extends Component {
         this.enemies = this.enemies.filter((enemy) => enemy.alive);
     }
 
+    private startBonusRound(): void {
+        this.bonusActive = true;
+        this.bonusTimer = 0;
+        this.bonusParticleTimer = 0;
+        this.playerSpeed = 5;
+        this.updateSpeedAura();
+        this.showToast('BONUS ROUND  10 SECONDS', new Color(255, 220, 92));
+
+        for (let index = 0; index < 36; index++) {
+            const z = -6 - index * 4.35;
+            const x = this.randomLane(index + 151);
+            if (index % 3 === 0) {
+                this.spawnMegaWall(z);
+            } else if (index % 3 === 1) {
+                this.spawnWall(x, z);
+            } else {
+                this.spawnWoodFence(x, z);
+            }
+        }
+    }
+
+    private updateBonusRound(dt: number): void {
+        this.bonusTimer += dt;
+        this.bonusParticleTimer += dt;
+        while (this.bonusParticleTimer >= 0.06) {
+            this.bonusParticleTimer -= 0.06;
+            this.spawnBonusParticle();
+        }
+        if (this.bonusTimer >= this.bonusDuration) {
+            this.bonusCompleted = true;
+            this.bonusActive = false;
+            this.finish(GameState.WIN);
+        }
+    }
+
+    private spawnBonusParticle(): void {
+        const colors = [
+            new Color(255, 218, 74),
+            new Color(75, 235, 255),
+            new Color(194, 92, 255),
+            new Color(255, 80, 92),
+        ];
+        const particleIndex = Math.floor(this.bonusTimer * 18) % colors.length;
+        const angle = this.bonusTimer * 8.5 + particleIndex * Math.PI * 0.5;
+        const radius = 0.8 + (particleIndex % 2) * 0.35;
+        const start = new Vec3(
+            this.playerX + Math.cos(angle) * radius,
+            0.35 + (particleIndex % 3) * 0.3,
+            this.playerZ + Math.sin(angle) * radius,
+        );
+        const particle = this.factory.createSphere(
+            'Bonus Particle',
+            this.effectRoot,
+            start,
+            new Vec3(0.13, 0.13, 0.13),
+            colors[particleIndex],
+        );
+        tween(particle)
+            .to(
+                0.55,
+                {
+                    position: new Vec3(
+                        start.x + Math.cos(angle) * 0.9,
+                        start.y + 1.4,
+                        start.z + Math.sin(angle) * 0.9,
+                    ),
+                    scale: new Vec3(0.02, 0.02, 0.02),
+                },
+                { easing: 'quadOut' },
+            )
+            .call(() => particle.destroy())
+            .start();
+    }
+
     private getSquadHalfWidth(): number {
         let halfWidth = 0.3;
         for (const unit of this.unitNodes) {
@@ -748,6 +858,9 @@ export class PADemo extends Component {
     }
 
     private setPlayerSpeed(value: number): void {
+        if (this.bonusActive && value < 5) {
+            return;
+        }
         const nextSpeed = Math.max(0, Math.min(5, value));
         if (nextSpeed === this.playerSpeed) {
             return;
@@ -803,9 +916,11 @@ export class PADemo extends Component {
     private updateTrackItems(dt: number): void {
         const scrollSpeed = this.getCurrentScrollSpeed();
         this.updateTrackItemGroup(this.walls, scrollSpeed, dt, 'wall');
+        this.updateTrackItemGroup(this.megaWalls, scrollSpeed, dt, 'megaWall');
         this.updateTrackItemGroup(this.woodenFences, scrollSpeed, dt, 'fence');
         this.updateTrackItemGroup(this.agilityPickups, scrollSpeed, dt, 'pickup');
         this.walls = this.walls.filter((item) => !item.collected);
+        this.megaWalls = this.megaWalls.filter((item) => !item.collected);
         this.woodenFences = this.woodenFences.filter((item) => !item.collected);
         this.agilityPickups = this.agilityPickups.filter((item) => !item.collected);
     }
@@ -814,7 +929,7 @@ export class PADemo extends Component {
         items: TrackItemEntity[],
         scrollSpeed: number,
         dt: number,
-        kind: 'wall' | 'fence' | 'pickup',
+        kind: 'wall' | 'megaWall' | 'fence' | 'pickup',
     ): void {
         for (const item of items) {
             if (item.collected) {
@@ -831,13 +946,20 @@ export class PADemo extends Component {
             const objectIsShattering = touchesPlayer && kind !== 'pickup';
             if (touchesPlayer) {
                 if (kind === 'wall') {
-                    this.setPlayerSpeed(this.playerSpeed - 1);
-                    this.showToast('WALL HIT  SPEED -1', Color.WHITE);
+                    if (!this.bonusActive) {
+                        this.setPlayerSpeed(this.playerSpeed - 1);
+                        this.showToast('WALL HIT  SPEED -1', Color.WHITE);
+                    }
                     this.spawnDustCloud(item.node.position);
                     this.shatterWall(item.node);
+                } else if (kind === 'megaWall') {
+                    this.spawnMegaDustCloud(item.node.position);
+                    this.shatterMegaWall(item.node);
                 } else if (kind === 'fence') {
-                    this.setPlayerSpeed(this.playerSpeed - 1);
-                    this.showToast('FENCE HIT  SPEED -1', new Color(220, 164, 98));
+                    if (!this.bonusActive) {
+                        this.setPlayerSpeed(this.playerSpeed - 1);
+                        this.showToast('FENCE HIT  SPEED -1', new Color(220, 164, 98));
+                    }
                     this.shatterWoodFence(item.node);
                 } else {
                     const previousSpeed = this.playerSpeed;
@@ -1038,6 +1160,47 @@ export class PADemo extends Component {
         this.scheduleOnce(() => fence.destroy(), 1.25);
     }
 
+    private spawnMegaDustCloud(position: Readonly<Vec3>): void {
+        this.spawnDustCloud(new Vec3(position.x - 1.4, position.y, position.z));
+        this.spawnDustCloud(new Vec3(position.x + 1.4, position.y, position.z));
+    }
+
+    private shatterMegaWall(wall: Node): void {
+        wall.getChildByName('Mega Wall Base')?.destroy();
+        const blocks = [...wall.children].filter((child) => child.name === 'Mega Wall Block');
+        for (let index = 0; index < blocks.length; index++) {
+            const block = blocks[index];
+            const angle = (Math.PI * 2 * index) / blocks.length + (index % 3) * 0.19;
+            const distance = 4.5 + (index % 5) * 0.75;
+            const start = block.position;
+            const launchTarget = new Vec3(
+                start.x + Math.cos(angle) * distance,
+                2.4 + (index % 5) * 0.82,
+                start.z + Math.sin(angle) * distance,
+            );
+            const vanishTarget = new Vec3(
+                launchTarget.x + Math.cos(angle) * 2.2,
+                launchTarget.y + 1.4,
+                launchTarget.z + Math.sin(angle) * 2.2,
+            );
+            block.setRotationFromEuler(index * 47, index * 67, index * 31);
+            tween(block)
+                .to(
+                    0.85 + (index % 4) * 0.1,
+                    { position: launchTarget, scale: new Vec3(0.42, 0.42, 0.42) },
+                    { easing: 'quadOut' },
+                )
+                .to(
+                    0.65 + (index % 3) * 0.08,
+                    { position: vanishTarget, scale: new Vec3(0.04, 0.04, 0.04) },
+                    { easing: 'quadIn' },
+                )
+                .call(() => block.destroy())
+                .start();
+        }
+        this.scheduleOnce(() => wall.destroy(), 2.1);
+    }
+
     private shatterWall(wall: Node): void {
         wall.getChildByName('Wall Base')?.destroy();
         const blocks = [...wall.children].filter((child) => child.name === 'Wall Block');
@@ -1107,7 +1270,9 @@ export class PADemo extends Component {
 
     private updateHud(): void {
         this.squadLabel.string = `SQUAD  x${this.squadCount}`;
-        this.speedLabel.string = `SPEED  ${this.playerSpeed}`;
+        this.speedLabel.string = this.bonusActive
+            ? `SPEED  5  BONUS ${Math.max(0, Math.ceil(this.bonusDuration - this.bonusTimer))}s`
+            : `SPEED  ${this.playerSpeed}`;
         const progress = Math.max(0, Math.min(1, this.distance / this.totalDistance));
         this.distanceLabel.string = `${Math.floor(progress * 100)}%`;
         this.drawBar(this.progressGraphics, 760, 12, progress, new Color(77, 227, 201), new Color(42, 58, 65));
@@ -1136,9 +1301,13 @@ export class PADemo extends Component {
         const won = result === GameState.WIN;
         this.titleLabel.string = won ? 'VICTORY' : 'MISSION FAILED';
         this.titleLabel.color = won ? new Color(255, 220, 105) : new Color(255, 112, 112);
-        this.subtitleLabel.string = won ? 'FINISH LINE REACHED' : 'THE LINE WAS BROKEN';
+        this.subtitleLabel.string = won
+            ? (this.bonusCompleted ? 'BONUS COMPLETE' : 'FINISH LINE REACHED')
+            : 'THE LINE WAS BROKEN';
         const progressPercent = Math.min(100, Math.floor(this.distance / this.totalDistance * 100));
-        this.resultLabel.string = won ? 'RUN COMPLETE' : `SQUAD LOST  -  ${progressPercent}%`;
+        this.resultLabel.string = won
+            ? (this.bonusCompleted ? 'MAX SPEED REWARD CLEARED' : 'RUN COMPLETE')
+            : `SQUAD LOST  -  ${progressPercent}%`;
         this.hintLabel.string = won ? 'MISSION COMPLETE' : 'REGROUP AND TRY AGAIN';
 
         this.ctaButton.interactable = true;
