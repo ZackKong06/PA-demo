@@ -1,0 +1,41 @@
+{
+  "version": "1.0.1",
+  "map": {
+    "scenes": {
+      "time": 1784176601071.1191,
+      "uuid": "4865a9e7-0c99-43ec-80e9-630949bdff89"
+    },
+    "scripts": {
+      "time": 1784176601087.1274,
+      "uuid": "58e936e5-aed7-4b1a-8649-9d1a058cd83a"
+    },
+    "scripts\\PADemo.ts": {
+      "time": 1784186630116.8167,
+      "uuid": "7568f09a-6f69-4b3a-952b-2c811b6e3b4f"
+    },
+    "scripts\\ProceduralFactory.ts": {
+      "time": 1784181404268.6948,
+      "uuid": "825db90b-0dc1-4f44-811e-0603a5accf9c"
+    },
+    "scenes.meta": {
+      "time": 1784172954223.958
+    },
+    "scripts.meta": {
+      "time": 1784172954224.9539
+    },
+    "scripts\\PADemo.ts.meta": {
+      "time": 1784172954225.9539
+    },
+    "scripts\\ProceduralFactory.ts.meta": {
+      "time": 1784172954225.9539
+    },
+    "scenes\\main.scene": {
+      "time": 1784172954223.958,
+      "uuid": "797c34aa-f99d-456a-976e-c314944df40c"
+    },
+    "scenes\\main.scene.meta": {
+      "time": 1784172954224.9539
+    }
+  },
+  "missing": {}
+}

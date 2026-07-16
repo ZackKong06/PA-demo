@@ -1,0 +1,12 @@
+{
+    "version": "1.0.1",
+    "data": {
+        "paths": [
+            "scenes",
+            "scripts",
+            "scripts\\PADemo.ts",
+            "scripts\\ProceduralFactory.ts",
+            "scenes\\main.scene"
+        ]
+    }
+}

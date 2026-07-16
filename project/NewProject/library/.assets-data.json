@@ -1,0 +1,32 @@
+{
+  "4865a9e7-0c99-43ec-80e9-630949bdff89": {
+    "url": "db://assets/scenes",
+    "value": {},
+    "versionCode": 1
+  },
+  "58e936e5-aed7-4b1a-8649-9d1a058cd83a": {
+    "url": "db://assets/scripts",
+    "value": {},
+    "versionCode": 1
+  },
+  "7568f09a-6f69-4b3a-952b-2c811b6e3b4f": {
+    "url": "db://assets/scripts/PADemo.ts",
+    "value": {},
+    "versionCode": 1
+  },
+  "825db90b-0dc1-4f44-811e-0603a5accf9c": {
+    "url": "db://assets/scripts/ProceduralFactory.ts",
+    "value": {},
+    "versionCode": 1
+  },
+  "797c34aa-f99d-456a-976e-c314944df40c": {
+    "url": "db://assets/scenes/main.scene",
+    "value": {
+      "depends": [],
+      "dependScripts": [
+        "7568f09a-6f69-4b3a-952b-2c811b6e3b4f"
+      ]
+    },
+    "versionCode": 2
+  }
+}

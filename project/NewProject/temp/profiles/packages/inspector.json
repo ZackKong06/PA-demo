@@ -1,0 +1,22 @@
+{
+  "b5b27ab1-e740-4398-b407-848fc2b2c897@6c48a": {
+    "texture": {
+      "mipfilter": "none"
+    }
+  },
+  "d032ac98-05e1-4090-88bb-eb640dcb5fc1@b47c0": {
+    "texture": {
+      "mipfilter": "linear"
+    }
+  },
+  "6f01cf7f-81bf-4a7e-bd5d-0afc19696480@b47c0": {
+    "texture": {
+      "mipfilter": "linear"
+    }
+  },
+  "52ef29ed-bd92-4e94-ab2f-0ebc91bf3a60@6c48a": {
+    "texture": {
+      "mipfilter": "linear"
+    }
+  }
+}
