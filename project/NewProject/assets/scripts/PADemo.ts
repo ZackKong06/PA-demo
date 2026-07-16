@@ -19,6 +19,7 @@ import {
     tween,
     UITransform,
     Vec3,
+    Vec4,
     VerticalTextAlignment,
     view,
 } from 'cc';
@@ -69,6 +70,7 @@ export class PADemo extends Component {
     private walls: TrackItemEntity[] = [];
     private megaWalls: TrackItemEntity[] = [];
     private woodenFences: TrackItemEntity[] = [];
+    private barrels: TrackItemEntity[] = [];
     private agilityPickups: TrackItemEntity[] = [];
     private roadStripes: Node[] = [];
     private sceneryNodes: Node[] = [];
@@ -190,10 +192,14 @@ export class PADemo extends Component {
     }
 
     private createEnvironment(): void {
+        this.factory.createBackgroundQuad(this.world);
         const roadRoot = new Node('Road');
         roadRoot.setParent(this.world);
+        const riverRoot = new Node('Rivers');
+        riverRoot.setParent(this.world);
         for (let z = 4; z >= -164; z -= 12) {
             this.factory.createRoadSegment(roadRoot, z);
+            this.factory.createRiverSegment(riverRoot, z);
         }
         for (let z = 2; z >= -160; z -= 4) {
             this.roadStripes.push(this.factory.createRoadStripe(roadRoot, z));
@@ -289,11 +295,13 @@ export class PADemo extends Component {
     private createTrackItems(): void {
         const wallPositions = [-28, -72, -118, -162, -208, -252, -298, -342];
         const fencePositions = [-48, -94, -140, -185, -230, -276, -322];
+        const barrelPositions = [-62, -126, -196, -266, -330];
         this.spawnAgilityPickup(0, -1);
         this.spawnAgilityPickup(0, -4.5);
         const pickupCandidates = [-16, -42, -64, -86, -110, -132, -154, -178, -200, -224, -246, -268, -290, -314, -338];
         wallPositions.forEach((z, index) => this.spawnWall(this.randomLane(index + 11), z));
         fencePositions.forEach((z, index) => this.spawnWoodFence(this.randomLane(index + 91), z));
+        barrelPositions.forEach((z, index) => this.spawnBarrel(this.randomLane(index + 211), z));
         pickupCandidates.forEach((z, index) => {
             if (this.seededRandom(index + 73) < 0.8) {
                 this.spawnAgilityPickup(this.randomLane(index + 37), z);
@@ -319,12 +327,14 @@ export class PADemo extends Component {
         for (let row = 0; row < 3; row++) {
             for (let column = 0; column < 3; column++) {
                 const offset = row % 2 === 0 ? 0 : 0.12;
-                this.factory.createBox(
+                this.factory.createTexturedBox(
                     'Wall Block',
                     node,
                     new Vec3((column - 1) * 0.48 + offset, 0.28 + row * 0.48, 0),
                     new Vec3(0.44, 0.42, 0.32),
                     color,
+                    'textures/white_brick',
+                    new Vec4(1, 1, 0, 0),
                 );
             }
         }
@@ -346,12 +356,14 @@ export class PADemo extends Component {
         for (let row = 0; row < 4; row++) {
             for (let column = 0; column < 5; column++) {
                 const offset = row % 2 === 0 ? 0 : 0.18;
-                this.factory.createBox(
+                this.factory.createTexturedBox(
                     'Mega Wall Block',
                     node,
                     new Vec3((column - 2) * 0.68 + offset, 0.34 + row * 0.58, 0),
                     new Vec3(0.62, 0.52, 0.48),
                     row % 2 === 0 ? wallColor : new Color(226, 232, 236),
+                    'textures/mega_stone',
+                    new Vec4(1, 1, 0, 0),
                 );
             }
         }
@@ -378,6 +390,25 @@ export class PADemo extends Component {
         const brace = this.factory.createBox('Fence Piece', node, new Vec3(0, 0.78, -0.05), new Vec3(2.2, 0.16, 0.18), lightWood);
         brace.setRotationFromEuler(0, 0, 24);
         this.woodenFences.push({ node, width: 1.35, collected: false });
+    }
+
+    private spawnBarrel(x: number, z: number): void {
+        const node = new Node('Wood Barrel');
+        node.setParent(this.world);
+        node.setPosition(x, 0, z);
+        this.factory.createTexturedCylinder(
+            'Barrel Piece',
+            node,
+            new Vec3(0, 0.65, 0),
+            new Vec3(0.92, 1.28, 0.92),
+            Color.WHITE,
+            'textures/wood_barrel',
+        );
+        const metal = new Color(64, 72, 76);
+        this.factory.createCylinder('Barrel Piece', node, new Vec3(0, 0.28, 0), new Vec3(0.98, 0.09, 0.98), metal);
+        this.factory.createCylinder('Barrel Piece', node, new Vec3(0, 1.02, 0), new Vec3(0.98, 0.09, 0.98), metal);
+        this.factory.createCylinder('Barrel Piece', node, new Vec3(0, 1.29, 0), new Vec3(0.82, 0.08, 0.82), new Color(120, 76, 41));
+        this.barrels.push({ node, width: 0.62, collected: false });
     }
 
     private spawnAgilityPickup(x: number, z: number): void {
@@ -670,7 +701,7 @@ export class PADemo extends Component {
             const sway = Math.sin(this.elapsed * 2.2 + enemy.seed) * 0.08;
             const x = position.x + sway * dt;
             enemy.node.setPosition(x, Math.abs(Math.sin(this.elapsed * 5 + enemy.seed)) * 0.04, z);
-            enemy.node.setRotationFromEuler(0, 180, Math.sin(this.elapsed * 5 + enemy.seed) * 3);
+            enemy.node.setRotationFromEuler(0, 0, Math.sin(this.elapsed * 5 + enemy.seed) * 3);
 
             if (!enemy.crossedPlayer && z >= this.playerZ - 0.45) {
                 enemy.crossedPlayer = true;
@@ -678,6 +709,7 @@ export class PADemo extends Component {
                 if (touchesSquad) {
                     if (enemy.finalBoss) {
                         enemy.alive = false;
+                        this.spawnImpactFlash(enemy.node.position, 4.8);
                         if (this.playerSpeed === 5) {
                             this.showToast('MAX SPEED  BOSS DEFEATED', new Color(255, 92, 92));
                             this.spawnBurst(enemy.node.position, new Color(255, 72, 72), 3.2);
@@ -704,6 +736,7 @@ export class PADemo extends Component {
                         continue;
                     }
                     enemy.alive = false;
+                    this.spawnImpactFlash(enemy.node.position, 1.8 + enemy.strength * 0.55);
                     this.spawnBloodParticles(enemy.node.position, enemy.strength);
                     const enemyName = enemy.strength === 3 ? 'BRUTE' : enemy.strength === 2 ? 'GIANT' : 'ENEMY';
                     if (this.playerSpeed < enemy.strength) {
@@ -924,10 +957,12 @@ export class PADemo extends Component {
         this.updateTrackItemGroup(this.walls, scrollSpeed, dt, 'wall');
         this.updateTrackItemGroup(this.megaWalls, scrollSpeed, dt, 'megaWall');
         this.updateTrackItemGroup(this.woodenFences, scrollSpeed, dt, 'fence');
+        this.updateTrackItemGroup(this.barrels, scrollSpeed, dt, 'barrel');
         this.updateTrackItemGroup(this.agilityPickups, scrollSpeed, dt, 'pickup');
         this.walls = this.walls.filter((item) => !item.collected);
         this.megaWalls = this.megaWalls.filter((item) => !item.collected);
         this.woodenFences = this.woodenFences.filter((item) => !item.collected);
+        this.barrels = this.barrels.filter((item) => !item.collected);
         this.agilityPickups = this.agilityPickups.filter((item) => !item.collected);
     }
 
@@ -935,7 +970,7 @@ export class PADemo extends Component {
         items: TrackItemEntity[],
         scrollSpeed: number,
         dt: number,
-        kind: 'wall' | 'megaWall' | 'fence' | 'pickup',
+        kind: 'wall' | 'megaWall' | 'fence' | 'barrel' | 'pickup',
     ): void {
         for (const item of items) {
             if (item.collected) {
@@ -950,6 +985,10 @@ export class PADemo extends Component {
 
             const touchesPlayer = Math.abs(item.node.position.x - this.playerX) <= item.width + this.getSquadHalfWidth();
             const objectIsShattering = touchesPlayer && kind !== 'pickup';
+            if (objectIsShattering) {
+                const flashSize = kind === 'megaWall' ? 4.2 : kind === 'wall' ? 2.6 : kind === 'barrel' ? 2.4 : 2.2;
+                this.spawnImpactFlash(item.node.position, flashSize);
+            }
             if (touchesPlayer) {
                 if (kind === 'wall') {
                     if (!this.bonusActive) {
@@ -967,6 +1006,12 @@ export class PADemo extends Component {
                         this.showToast('FENCE HIT  SPEED -1', new Color(220, 164, 98));
                     }
                     this.shatterWoodFence(item.node);
+                } else if (kind === 'barrel') {
+                    if (!this.bonusActive) {
+                        this.setPlayerSpeed(this.playerSpeed - 1);
+                        this.showToast('BARREL HIT  SPEED -1', new Color(214, 148, 78));
+                    }
+                    this.shatterBarrel(item.node);
                 } else {
                     const previousSpeed = this.playerSpeed;
                     this.setPlayerSpeed(this.playerSpeed + 1);
@@ -1112,6 +1157,60 @@ export class PADemo extends Component {
         }
     }
 
+    private shatterBarrel(barrel: Node): void {
+        const pieces = [...barrel.children].filter((child) => child.name === 'Barrel Piece');
+        for (let index = 0; index < pieces.length; index++) {
+            const piece = pieces[index];
+            const angle = (Math.PI * 2 * index) / pieces.length + 0.42;
+            const start = piece.position;
+            piece.setRotationFromEuler(index * 57, index * 83, index * 39);
+            tween(piece)
+                .to(
+                    0.68 + index * 0.08,
+                    {
+                        position: new Vec3(
+                            start.x + Math.cos(angle) * (2.1 + index * 0.25),
+                            1.4 + index * 0.52,
+                            start.z + Math.sin(angle) * (2.1 + index * 0.25),
+                        ),
+                        scale: new Vec3(0.1, 0.1, 0.1),
+                    },
+                    { easing: 'quadOut' },
+                )
+                .call(() => piece.destroy())
+                .start();
+        }
+
+        const position = barrel.position;
+        for (let index = 0; index < 18; index++) {
+            const angle = (Math.PI * 2 * index) / 18 + 0.2;
+            const chip = this.factory.createBox(
+                'Barrel Wood Chip',
+                this.effectRoot,
+                new Vec3(position.x, 0.65, position.z),
+                new Vec3(0.2 + (index % 4) * 0.05, 0.12, 0.08),
+                index % 2 === 0 ? new Color(184, 118, 60) : new Color(105, 61, 34),
+            );
+            chip.setRotationFromEuler(index * 37, index * 61, index * 23);
+            tween(chip)
+                .to(
+                    0.65 + (index % 5) * 0.08,
+                    {
+                        position: new Vec3(
+                            position.x + Math.cos(angle) * (1.8 + (index % 4) * 0.5),
+                            0.9 + (index % 6) * 0.3,
+                            position.z + Math.sin(angle) * (1.8 + (index % 4) * 0.5),
+                        ),
+                        scale: new Vec3(0.04, 0.04, 0.04),
+                    },
+                    { easing: 'quadOut' },
+                )
+                .call(() => chip.destroy())
+                .start();
+        }
+        this.scheduleOnce(() => barrel.destroy(), 1.5);
+    }
+
     private shatterWoodFence(fence: Node): void {
         const pieces = [...fence.children].filter((child) => child.name === 'Fence Piece');
         for (let index = 0; index < pieces.length; index++) {
@@ -1143,27 +1242,27 @@ export class PADemo extends Component {
                 'Wood Chip',
                 this.effectRoot,
                 new Vec3(fencePosition.x, 0.65, fencePosition.z),
-                new Vec3(0.12 + (index % 3) * 0.04, 0.07, 0.05),
+                new Vec3(0.2 + (index % 3) * 0.06, 0.12, 0.08),
                 index % 2 === 0 ? new Color(174, 111, 60) : new Color(112, 67, 38),
             );
             chip.setRotationFromEuler(index * 31, index * 47, index * 19);
             tween(chip)
                 .to(
-                    0.55 + (index % 4) * 0.08,
+                    0.7 + (index % 4) * 0.09,
                     {
                         position: new Vec3(
-                            fencePosition.x + Math.cos(angle) * (1.5 + (index % 3) * 0.45),
+                            fencePosition.x + Math.cos(angle) * (1.8 + (index % 3) * 0.55),
                             1 + (index % 5) * 0.36,
-                            fencePosition.z + Math.sin(angle) * (1.5 + (index % 3) * 0.45),
+                            fencePosition.z + Math.sin(angle) * (1.8 + (index % 3) * 0.55),
                         ),
-                        scale: new Vec3(0.02, 0.02, 0.02),
+                        scale: new Vec3(0.035, 0.035, 0.035),
                     },
                     { easing: 'quadOut' },
                 )
                 .call(() => chip.destroy())
                 .start();
         }
-        this.scheduleOnce(() => fence.destroy(), 1.25);
+        this.scheduleOnce(() => fence.destroy(), 1.5);
     }
 
     private spawnMegaDustCloud(position: Readonly<Vec3>): void {
@@ -1241,6 +1340,20 @@ export class PADemo extends Component {
                 .start();
         }
         this.scheduleOnce(() => wall.destroy(), 1.45);
+    }
+
+    private spawnImpactFlash(position: Readonly<Vec3>, size: number): void {
+        const flash = this.factory.createImpactQuad(
+            'Impact Flash',
+            this.effectRoot,
+            new Vec3(position.x, 1.05, position.z + 0.35),
+            new Vec3(size * 0.28, size * 0.28, 1),
+        );
+        tween(flash)
+            .to(0.13, { scale: new Vec3(size, size, 1) }, { easing: 'quadOut' })
+            .to(0.12, { scale: new Vec3(size * 1.35, size * 1.35, 1) }, { easing: 'quadIn' })
+            .call(() => flash.destroy())
+            .start();
     }
 
     private spawnBurst(position: Readonly<Vec3>, color: Color, size: number): void {
