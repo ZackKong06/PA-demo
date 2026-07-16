@@ -64,25 +64,24 @@ export class ProceduralFactory {
         this.createBox('LegL', root, new Vec3(-0.12, 0.25, 0), new Vec3(0.15, 0.45, 0.18), new Color(34, 55, 70));
         this.createBox('LegR', root, new Vec3(0.12, 0.25, 0), new Vec3(0.15, 0.45, 0.18), new Color(34, 55, 70));
 
-        const weapon = this.createBox(
-            'Blaster',
-            root,
-            new Vec3(0.32, 0.82, -0.24),
-            new Vec3(0.12, 0.14, 0.62),
-            new Color(38, 45, 54),
-        );
-        weapon.setRotationFromEuler(0, 0, -8);
-
         this.createBox('Visor', root, new Vec3(0, 1.34, -0.18), new Vec3(0.34, 0.12, 0.05), new Color(82, 234, 255));
         return root;
     }
 
-    public createEnemy(name: string, parent: Node, boss = false): Node {
+    public createEnemy(name: string, parent: Node, strength = 1): Node {
         const root = new Node(name);
         root.setParent(parent);
-        const bodyColor = boss ? new Color(123, 57, 190) : new Color(221, 69, 79);
-        const darkColor = boss ? new Color(55, 31, 86) : new Color(82, 36, 41);
-        const size = boss ? 1.75 : 1;
+        const bodyColor = strength === 3
+            ? new Color(59, 183, 103)
+            : strength === 2 ? new Color(132, 68, 196) : new Color(221, 69, 79);
+        const darkColor = strength === 3
+            ? new Color(30, 91, 59)
+            : strength === 2 ? new Color(57, 34, 88) : new Color(82, 36, 41);
+        const baseColor = strength === 5
+            ? new Color(255, 67, 75)
+            : strength === 3 ? new Color(181, 84, 245)
+                : strength === 2 ? new Color(70, 155, 255) : new Color(67, 224, 125);
+        this.createCylinder('Enemy Base', root, new Vec3(0, 0.025, 0), new Vec3(0.78, 0.04, 0.78), baseColor);
 
         this.createBox('Body', root, new Vec3(0, 0.72, 0), new Vec3(0.5, 0.68, 0.36), bodyColor);
         this.createSphere('Head', root, new Vec3(0, 1.34, 0), new Vec3(0.44, 0.44, 0.44), bodyColor);
@@ -91,61 +90,28 @@ export class ProceduralFactory {
         this.createSphere('EyeL', root, new Vec3(-0.12, 1.38, -0.2), new Vec3(0.09, 0.09, 0.06), new Color(255, 238, 103));
         this.createSphere('EyeR', root, new Vec3(0.12, 1.38, -0.2), new Vec3(0.09, 0.09, 0.06), new Color(255, 238, 103));
 
-        if (boss) {
-            const hornL = this.createCone('HornL', root, new Vec3(-0.28, 1.72, 0), new Vec3(0.18, 0.5, 0.18), new Color(250, 205, 93));
-            const hornR = this.createCone('HornR', root, new Vec3(0.28, 1.72, 0), new Vec3(0.18, 0.5, 0.18), new Color(250, 205, 93));
+        if (strength >= 2) {
+            const armorColor = new Color(247, 198, 74);
+            const hornL = this.createCone('HornL', root, new Vec3(-0.28, 1.72, 0), new Vec3(0.18, 0.5, 0.18), armorColor);
+            const hornR = this.createCone('HornR', root, new Vec3(0.28, 1.72, 0), new Vec3(0.18, 0.5, 0.18), armorColor);
             hornL.setRotationFromEuler(0, 0, 18);
             hornR.setRotationFromEuler(0, 0, -18);
-            this.createBox('Armor', root, new Vec3(0, 0.9, -0.24), new Vec3(0.75, 0.38, 0.12), new Color(250, 205, 93));
+            this.createBox('Chest Armor', root, new Vec3(0, 0.9, -0.24), new Vec3(0.75, 0.38, 0.12), armorColor);
+            this.createBox('ShoulderL', root, new Vec3(-0.42, 0.98, 0), new Vec3(0.28, 0.24, 0.48), armorColor);
+            this.createBox('ShoulderR', root, new Vec3(0.42, 0.98, 0), new Vec3(0.28, 0.24, 0.48), armorColor);
+            if (strength === 5) {
+                this.createBox('Boss Crown', root, new Vec3(0, 1.92, -0.08), new Vec3(0.82, 0.28, 0.42), new Color(255, 65, 72));
+                this.createSphere('Boss Core', root, new Vec3(0, 0.92, -0.35), new Vec3(0.25, 0.25, 0.12), new Color(255, 238, 112));
+                root.setScale(5.4, 5.4, 5.4);
+            } else if (strength === 3) {
+                this.createBox('Brute Crest', root, new Vec3(0, 1.78, -0.12), new Vec3(0.42, 0.32, 0.3), new Color(181, 84, 245));
+                this.createSphere('Brute Core', root, new Vec3(0, 0.92, -0.34), new Vec3(0.22, 0.22, 0.12), new Color(220, 139, 255));
+                root.setScale(2.3, 2.3, 2.3);
+            } else {
+                root.setScale(1.75, 1.75, 1.75);
+            }
         }
-
-        root.setScale(size, size, size);
         return root;
-    }
-
-    public createGate(parent: Node, value: number, color: Color): Node {
-        const root = new Node(value >= 0 ? `Gate+${value}` : `Gate${value}`);
-        root.setParent(parent);
-        this.createBox('LeftPost', root, new Vec3(-2.55, 1.2, 0), new Vec3(0.22, 2.4, 0.25), color);
-        this.createBox('RightPost', root, new Vec3(2.55, 1.2, 0), new Vec3(0.22, 2.4, 0.25), color);
-        this.createBox('Header', root, new Vec3(0, 2.25, 0), new Vec3(5.3, 0.25, 0.25), color);
-
-        const sign = new Node('Sign');
-        sign.setParent(root);
-        sign.setPosition(0, 1.2, 0);
-        this.updateGateValue(root, value, color);
-        return root;
-    }
-
-    public updateGateValue(gate: Node, value: number, color: Color): void {
-        gate.name = value >= 0 ? `Gate+${value}` : `Gate${value}`;
-        for (const partName of ['LeftPost', 'RightPost', 'Header']) {
-            const renderer = gate.getChildByName(partName)?.getComponent(MeshRenderer);
-            renderer?.setMaterial(this.getMaterial(color), 0);
-        }
-
-        const sign = gate.getChildByName('Sign');
-        if (!sign) {
-            return;
-        }
-
-        for (const child of [...sign.children]) {
-            child.destroy();
-        }
-
-        const digits = Math.floor(Math.abs(value)).toString();
-        const digitsWidth = digits.length * 0.9 - 0.2;
-        const groupWidth = 0.7 + 0.25 + digitsWidth;
-        const left = -groupWidth * 0.5;
-        if (value >= 0) {
-            this.createPlus(sign, left + 0.35, color);
-        } else {
-            this.createMinus(sign, left + 0.35, color);
-        }
-        for (let i = 0; i < digits.length; i++) {
-            this.createDigit(sign, Number(digits[i]), left + 0.95 + i * 0.9, color);
-        }
-        sign.setScale(Math.min(1, 4.4 / groupWidth), 1, 1);
     }
 
     public createRoadSegment(parent: Node, z: number): Node {
@@ -234,47 +200,4 @@ export class ProceduralFactory {
         return material;
     }
 
-    private createPlus(parent: Node, x: number, color: Color): void {
-        this.createBox('PlusH', parent, new Vec3(x, 0, -0.18), new Vec3(0.7, 0.15, 0.12), color);
-        this.createBox('PlusV', parent, new Vec3(x, 0, -0.18), new Vec3(0.15, 0.7, 0.12), color);
-    }
-
-    private createMinus(parent: Node, x: number, color: Color): void {
-        this.createBox('Minus', parent, new Vec3(x, 0, -0.18), new Vec3(0.7, 0.15, 0.12), color);
-    }
-
-    private createDigit(parent: Node, value: number, x: number, color: Color): void {
-        const segmentsByDigit: Record<number, number[]> = {
-            0: [0, 1, 2, 3, 4, 5],
-            1: [1, 2],
-            2: [0, 1, 6, 4, 3],
-            3: [0, 1, 6, 2, 3],
-            4: [5, 6, 1, 2],
-            5: [0, 5, 6, 2, 3],
-            6: [0, 5, 6, 4, 2, 3],
-            7: [0, 1, 2],
-            8: [0, 1, 2, 3, 4, 5, 6],
-            9: [0, 1, 2, 3, 5, 6],
-        };
-        const digit = Math.max(0, Math.min(9, Math.floor(value)));
-        const segmentPositions = [
-            new Vec3(x + 0.35, 0.48, -0.18),
-            new Vec3(x + 0.7, 0.24, -0.18),
-            new Vec3(x + 0.7, -0.24, -0.18),
-            new Vec3(x + 0.35, -0.48, -0.18),
-            new Vec3(x, -0.24, -0.18),
-            new Vec3(x, 0.24, -0.18),
-            new Vec3(x + 0.35, 0, -0.18),
-        ];
-        for (const index of segmentsByDigit[digit]) {
-            const vertical = index === 1 || index === 2 || index === 4 || index === 5;
-            this.createBox(
-                `Segment${index}`,
-                parent,
-                segmentPositions[index],
-                vertical ? new Vec3(0.12, 0.42, 0.12) : new Vec3(0.58, 0.12, 0.12),
-                color,
-            );
-        }
-    }
 }
