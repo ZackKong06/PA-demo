@@ -1,0 +1,49 @@
+2026-7-16 13:23:10 - log: Load engine in C:\ProgramData\cocos\editors\Creator\3.8.8\resources\resources\3d\engine
+2026-7-16 13:23:10 - log: Register native engine in C:\ProgramData\cocos\editors\Creator\3.8.8\resources\resources\3d\engine\native
+2026-7-16 13:23:11 - log: Request namespace: device-list
+2026-7-16 13:23:15 - log: Cocos MCP Server extension loaded
+2026-7-16 13:23:15 - log: [VersionDetector] Cocos Creator version: 3.8.8 (confirmed)
+2026-7-16 13:23:15 - log: [MCP插件] Version check: installed=1.7.8, current=1.7.8
+2026-7-16 13:23:15 - log: [MCP插件] Version matches (v1.7.8), no migration needed.
+2026-7-16 13:23:15 - log: [CocosTools] getTools() returned 16 tools: scene, node, component, prefab, asset, editor, view, composite, knowledge, validate, template, capture, builder, animation, spine, label
+2026-7-16 13:23:15 - log: [ToolManager] Initialized 16 cocos tools
+2026-7-16 13:23:15 - log: [Settings] Loaded settings: {
+  port: 3000,
+  autoStart: false,
+  enableDebugLog: false,
+  allowedOrigins: [ '*' ],
+  maxConnections: 10
+}
+2026-7-16 13:23:15 - log: [MCP插件] Plugin load - initial settings: {
+  port: 3000,
+  autoStart: false,
+  enableDebugLog: false,
+  allowedOrigins: [ '*' ],
+  maxConnections: 10
+}
+2026-7-16 13:23:15 - log: [MCP插件] Plugin load - transport: Streamable HTTP
+2026-7-16 13:23:15 - log: [MCPServer] Constructor received settings: {
+  port: 3000,
+  autoStart: false,
+  enableDebugLog: false,
+  allowedOrigins: [ '*' ],
+  maxConnections: 10
+}
+2026-7-16 13:23:15 - log: [MCPServer] Transport: Streamable HTTP (MCP 2025-03-26)
+2026-7-16 13:23:15 - log: [MCPServer] Initializing unified CocosTools...
+2026-7-16 13:23:15 - log: [MCPServer] CocosTools initialized: 12 intent-level tools
+2026-7-16 13:23:15 - log: [MCPServer] Bound to project: C:\Users\TU\Documents\Codex\2026-07-16\wo-d\PA-demo\project\NewProject
+2026-7-16 13:23:15 - log: [MCPServer] Updating enabled tools: 16 tools
+2026-7-16 13:23:15 - log: [CocosTools] getTools() returned 16 tools: scene, node, component, prefab, asset, editor, view, composite, knowledge, validate, template, capture, builder, animation, spine, label
+2026-7-16 13:23:15 - log: [MCPServer] Setup tools: 16 tools available
+2026-7-16 13:23:15 - log: [MCP Auth] License validated successfully (offline)
+2026-7-16 13:23:15 - log: [MCP插件] AutoStart disabled, server initialized but not started.
+2026-7-16 13:23:15 - log: [MCP插件] License check passed
+2026-7-16 13:23:17 - log: [MCP插件] Loaded 40 built-in prefab UUIDs (8 UI types) [attempt 1]
+2026-7-16 13:23:17 - log: [Scene] meshopt wasm decoder initialized
+2026-7-16 13:23:17 - log: [Scene] [bullet]:bullet wasm lib loaded.
+2026-7-16 13:23:17 - log: [Scene] [box2d]:box2d wasm lib loaded.
+2026-7-16 13:23:17 - log: [Scene] [PHYSICS]: using builtin.
+2026-7-16 13:23:17 - log: [Scene] Cocos Creator v3.8.8
+2026-7-16 13:23:17 - log: [Scene] Using custom pipeline: Builtin
+2026-7-16 13:23:18 - log: [Scene] [PHYSICS2D]: switch from builtin to box2d.
