@@ -56,7 +56,7 @@ export class PADemo extends Component {
     private readonly playerZ = 3.1;
     private readonly roadHalfWidth = 2.75;
     private readonly scrollSpeed = 3.35;
-    private readonly totalDistance = 240;
+    private readonly totalDistance = 360;
     private readonly enemyDespawnZ = 7.5;
 
     private state = GameState.READY;
@@ -274,24 +274,24 @@ export class PADemo extends Component {
     }
 
     private createLevel(): void {
-        this.spawnWave(-38, 2, 0.65);
-        this.spawnGiant(-72, -0.9);
-        this.spawnWave(-105, 3, 0.7);
-        this.spawnGiant(-138, 1.1);
-        this.spawnWave(-168, 4, 0.75);
-        this.spawnBrute(-184, 0.25);
-        this.spawnGiant(-202, -1.25);
-        this.spawnWave(-228, 5, 0.8);
+        this.spawnWave(-55, 2, 0.65);
+        this.spawnGiant(-105, -0.9);
+        this.spawnWave(-150, 3, 0.7);
+        this.spawnGiant(-215, 1.1);
+        this.spawnWave(-250, 4, 0.75);
+        this.spawnBrute(-275, 0.25);
+        this.spawnGiant(-305, -1.25);
+        this.spawnWave(-335, 5, 0.8);
         this.spawnFinalBoss();
         this.createTrackItems();
     }
 
     private createTrackItems(): void {
-        const wallPositions = [-24, -52, -82, -112, -142, -172, -202, -228];
-        const fencePositions = [-40, -68, -98, -128, -158, -188, -218];
+        const wallPositions = [-28, -72, -118, -162, -208, -252, -298, -342];
+        const fencePositions = [-48, -94, -140, -185, -230, -276, -322];
         this.spawnAgilityPickup(0, -1);
         this.spawnAgilityPickup(0, -4.5);
-        const pickupCandidates = [-14, -34, -46, -64, -76, -94, -106, -124, -136, -154, -166, -184, -196, -214, -232];
+        const pickupCandidates = [-16, -42, -64, -86, -110, -132, -154, -178, -200, -224, -246, -268, -290, -314, -338];
         wallPositions.forEach((z, index) => this.spawnWall(this.randomLane(index + 11), z));
         fencePositions.forEach((z, index) => this.spawnWoodFence(this.randomLane(index + 91), z));
         pickupCandidates.forEach((z, index) => {
@@ -779,7 +779,7 @@ export class PADemo extends Component {
         this.bonusActive = true;
         this.bonusTimer = 0;
         this.bonusParticleTimer = 0;
-        this.playerSpeed = 5;
+        this.playerSpeed = 7;
         this.updateSpeedAura();
         this.showToast('BONUS ROUND  10 SECONDS', new Color(255, 220, 92));
 
@@ -793,6 +793,7 @@ export class PADemo extends Component {
             } else {
                 this.spawnWoodFence(x, z);
             }
+            this.spawnWave(z - 2.15, 2, 0.42);
         }
     }
 
@@ -858,7 +859,7 @@ export class PADemo extends Component {
     }
 
     private setPlayerSpeed(value: number): void {
-        if (this.bonusActive && value < 5) {
+        if (this.bonusActive) {
             return;
         }
         const nextSpeed = Math.max(0, Math.min(5, value));
@@ -903,12 +904,17 @@ export class PADemo extends Component {
                 return new Color(255, 205, 72, 200);
             case 5:
                 return new Color(255, 76, 88, 210);
+            case 7:
+                return new Color(255, 232, 128, 225);
             default:
                 return new Color(135, 145, 150, 135);
         }
     }
 
     private getCurrentScrollSpeed(): number {
+        if (this.bonusActive) {
+            return this.scrollSpeed * 7;
+        }
         const speedMultipliers = [0.5, 1, 2, 3, 4, 5];
         return this.scrollSpeed * speedMultipliers[this.playerSpeed];
     }
@@ -1271,7 +1277,7 @@ export class PADemo extends Component {
     private updateHud(): void {
         this.squadLabel.string = `SQUAD  x${this.squadCount}`;
         this.speedLabel.string = this.bonusActive
-            ? `SPEED  5  BONUS ${Math.max(0, Math.ceil(this.bonusDuration - this.bonusTimer))}s`
+            ? `SPEED  7  BONUS ${Math.max(0, Math.ceil(this.bonusDuration - this.bonusTimer))}s`
             : `SPEED  ${this.playerSpeed}`;
         const progress = Math.max(0, Math.min(1, this.distance / this.totalDistance));
         this.distanceLabel.string = `${Math.floor(progress * 100)}%`;
