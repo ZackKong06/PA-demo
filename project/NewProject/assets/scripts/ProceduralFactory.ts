@@ -24,6 +24,15 @@ export class ProceduralFactory {
     private readonly textures = new Map<string, Texture2D>();
     private readonly pendingTextureBindings = new Map<string, TextureBinding[]>();
     private readonly meshes = new Map<PrimitiveKind, Mesh>();
+    private roadMaterial: Material | null = null;
+    private roadTextureOffset = 0;
+    private riverTextureOffset = 0;
+    private readonly riverMaterials: Material[] = [];
+    private readonly castleMaterials: Material[] = [];
+    private playerMaterial: Material | null = null;
+    private playerIdleTexture: Texture2D | null = null;
+    private playerAnimationTexture: Texture2D | null = null;
+    private readonly enemyMaterials = new Map<number, Material>();
 
     public createBox(
         name: string,
@@ -75,6 +84,11 @@ export class ProceduralFactory {
             console.warn(`Lit material unavailable for ${texturePath}; using albedo fallback`, error);
             renderer.setMaterial(this.getTexturedMaterial(texturePath, color, tiling, false), 0);
         }
+        if (texturePath === 'textures/road_pavers') this.roadMaterial = renderer.getMaterial(0);
+        if (texturePath === 'textures/mega_stone') {
+            const castleMaterial = renderer.getMaterial(0);
+            if (castleMaterial && !this.castleMaterials.includes(castleMaterial)) this.castleMaterials.push(castleMaterial);
+        }
         return node;
     }
 
@@ -122,11 +136,12 @@ export class ProceduralFactory {
         const root = new Node('River Segment');
         root.setParent(parent);
         root.setPosition(0, 0, z);
+        return root;
         for (const side of [-1, 1]) {
             this.createBox(
                 'River Bed', root, new Vec3(side * 6.3, -0.17, 0), new Vec3(3.4, 0.08, 12), new Color(28, 91, 118),
             );
-            this.createTexturedPrimitive(
+            const riverSurface =             this.createTexturedPrimitive(
                 'box',
                 'River Surface',
                 root,
@@ -137,8 +152,14 @@ export class ProceduralFactory {
                 new Vec4(2, 6, 0, 0),
                 true,
             );
+            const riverMaterial = riverSurface.getComponent(MeshRenderer)?.getMaterial(0);
+            if (riverMaterial && !this.riverMaterials.includes(riverMaterial)) this.riverMaterials.push(riverMaterial);
         }
         return root;
+    }
+
+    public createBloodSplash(parent: Node, position: Vec3, scale: Vec3): Node {
+        return this.createTexturedPrimitive('quad', 'Blood Splash', parent, position, scale, Color.WHITE, 'textures/blood_splash', new Vec4(1, -1, 0, 1), true);
     }
 
     public createImpactQuad(name: string, parent: Node, position: Vec3, scale: Vec3): Node {
@@ -149,7 +170,7 @@ export class ProceduralFactory {
             position,
             scale,
             new Color(255, 238, 185, 255),
-            'textures/impact_flash',
+            'textures/impact_flash_white',
             new Vec4(1, 1, 0, 0),
             true,
         );
@@ -189,18 +210,50 @@ export class ProceduralFactory {
         const root = new Node(name);
         root.setParent(parent);
         this.createCylinder('Player Base', root, new Vec3(0, 0.025, 0.08), new Vec3(0.62, 0.035, 0.48), color);
-        this.createTexturedPrimitive(
+        const playerVisual = this.createTexturedPrimitive(
             'quad',
             'Player Character',
             root,
             new Vec3(0, 0.82, -0.04),
             new Vec3(1.35, 1.55, 1),
             Color.WHITE,
-            'textures/player_character',
-            new Vec4(1, -1, 0, 1),
+            'textures/player_animation',
+            new Vec4(1 / 9, -1 / 8, 0, 1),
             true,
         );
+        this.playerMaterial = playerVisual.getComponent(MeshRenderer)?.getMaterial(0) ?? this.playerMaterial;
+        resources.load('textures/player_animation/texture', Texture2D, (error, texture) => {
+            if (!error && texture) this.playerAnimationTexture = texture;
+        });
+        resources.load('textures/player_idle/texture', Texture2D, (error, texture) => {
+            if (!error && texture) this.playerIdleTexture = texture;
+        });
         return root;
+    }
+
+    public updatePlayerAnimation(direction: number, elapsed: number): void {
+        if (!this.playerMaterial) return;
+        const movingLeft = direction < -0.05;
+        const movingRight = direction > 0.05;
+        if (!movingLeft && !movingRight && this.playerIdleTexture) {
+            this.playerMaterial.setProperty('mainTexture', this.playerIdleTexture);
+            this.playerMaterial.setProperty('tilingOffset', new Vec4(1, 1, 0, 0));
+            return;
+        }
+        if (this.playerAnimationTexture) this.playerMaterial.setProperty('mainTexture', this.playerAnimationTexture);
+        const frame = Math.floor(elapsed * 10) % 9;
+        const row = movingLeft ? 4 : 3;
+        const frameWidth = 1 / 9;
+        const frameHeight = 1 / 8;
+        this.playerMaterial.setProperty('tilingOffset', new Vec4(frameWidth, -frameHeight, frame * frameWidth, 1 - row * frameHeight));
+    }
+
+    public updateEnemyAnimation(elapsed: number): void {
+        const frame = Math.floor(elapsed * 8) % 7;
+        for (const [strength, material] of this.enemyMaterials) {
+            const row = strength >= 3 ? 0 : strength === 2 ? 1 : 2;
+            material.setProperty('tilingOffset', new Vec4(1 / 7, -1 / 6, frame / 7, 1 - row / 6));
+        }
     }
 
     private getEnemyFrameTiling(strength: number): Vec4 {
@@ -224,7 +277,7 @@ export class ProceduralFactory {
             ? new Color(255, 145, 145)
             : strength === 3 ? new Color(170, 255, 196)
                 : strength === 2 ? new Color(214, 182, 255) : Color.WHITE;
-        this.createTexturedPrimitive(
+        const enemyVisual = this.createTexturedPrimitive(
             'quad',
             'Enemy Character',
             root,
@@ -235,6 +288,8 @@ export class ProceduralFactory {
             this.getEnemyFrameTiling(strength),
             true,
         );
+        const enemyMaterial = enemyVisual.getComponent(MeshRenderer)?.getMaterial(0);
+        if (enemyMaterial) this.enemyMaterials.set(strength, enemyMaterial);
 
         if (strength >= 2) {
             const armorColor = new Color(247, 198, 74);
@@ -258,6 +313,19 @@ export class ProceduralFactory {
         return root;
     }
 
+    public updateRoadTextureScroll(distance: number): void {
+        if (!this.roadMaterial) return;
+        this.roadTextureOffset = (this.roadTextureOffset - distance / 8) % 1;
+        this.roadMaterial.setProperty('tilingOffset', new Vec4(3, 6, 0, this.roadTextureOffset));
+        this.riverTextureOffset = (this.riverTextureOffset - distance / 8) % 1;
+        for (const riverMaterial of this.riverMaterials) {
+            riverMaterial.setProperty('tilingOffset', new Vec4(2, 6, 0, this.riverTextureOffset));
+        }
+        for (const castleMaterial of this.castleMaterials) {
+            castleMaterial.setProperty('tilingOffset', new Vec4(1, 4, 0, this.roadTextureOffset));
+        }
+    }
+
     public createRoadSegment(parent: Node, z: number): Node {
         const segment = new Node('RoadSegment');
         segment.setParent(parent);
@@ -274,8 +342,15 @@ export class ProceduralFactory {
             0.92,
             0.72,
         );
-        this.createBox('RailL', segment, new Vec3(-3.35, 0.42, 0), new Vec3(0.18, 0.7, 12), new Color(48, 196, 186));
-        this.createBox('RailR', segment, new Vec3(3.35, 0.42, 0), new Vec3(0.18, 0.7, 12), new Color(48, 196, 186));
+        const wallColor = new Color(62, 70, 78);
+        const wallTop = new Color(96, 105, 114);
+        this.createLitTexturedBox('Castle Wall L', segment, new Vec3(-3.38, 0.65, 0), new Vec3(0.42, 1.8, 12), new Color(92, 96, 102), 'textures/mega_stone', 'textures/mega_stone_normal', new Vec4(1, 4, 0, 0), 0.94, 1.0);
+        this.createLitTexturedBox('Castle Wall R', segment, new Vec3(3.38, 0.65, 0), new Vec3(0.42, 1.8, 12), new Color(92, 96, 102), 'textures/mega_stone', 'textures/mega_stone_normal', new Vec4(1, 4, 0, 0), 0.94, 1.0);
+        for (const side of [-1, 1]) {
+            for (let battlement = -5; battlement <= 5; battlement++) {
+                this.createLitTexturedBox('Castle Battlement', segment, new Vec3(side * 3.38, 1.95, battlement * 2.2), new Vec3(0.5, 0.32, 0.62), new Color(108, 112, 118), 'textures/mega_stone', 'textures/mega_stone_normal', new Vec4(0.5, 0.5, 0, 0), 0.94, 1.0);
+            }
+        }
         return segment;
     }
 

@@ -88,6 +88,7 @@ export class PADemo extends Component {
     private barrels: TrackItemEntity[] = [];
     private agilityPickups: TrackItemEntity[] = [];
     private roadStripes: Node[] = [];
+    private roadSegments: Node[] = [];
     private sceneryNodes: Node[] = [];
 
     private squadCount = 3;
@@ -99,6 +100,8 @@ export class PADemo extends Component {
     private dragging = false;
     private lastPointerX = 0;
     private playerSpeed = 1;
+    private speedDecayTimer = 0;
+    private displayedSpeed = 1;
     private bonusActive = false;
     private bonusCompleted = false;
     private bonusTimer = 0;
@@ -150,7 +153,10 @@ export class PADemo extends Component {
     protected update(deltaTime: number): void {
         const dt = Math.min(deltaTime, 0.05);
         this.elapsed += dt;
+        const targetSpeed = this.bonusActive ? 5 : this.playerSpeed;
+        this.displayedSpeed += (targetSpeed - this.displayedSpeed) * Math.min(1, dt * 2.2);
         this.animateUnits();
+        this.factory.updateEnemyAnimation(this.elapsed);
         if (this.state === GameState.READY && this.dragHandNode) {
             this.dragHandNode.setPosition(Math.sin(this.elapsed * 2.7) * 80, -88, 0);
             const handPulse = 0.82 + Math.sin(this.elapsed * 5.4) * 0.05;
@@ -172,7 +178,9 @@ export class PADemo extends Component {
         } else if (this.state === GameState.PLAYING) {
             this.playerX += (this.targetPlayerX - this.playerX) * Math.min(1, dt * 14);
             this.playerRoot.setPosition(this.playerX, 0, this.playerZ);
+            this.factory.updatePlayerAnimation(this.targetPlayerX - this.playerX, this.elapsed);
             this.distance += this.getCurrentScrollSpeed() * dt;
+            this.updateSpeedDecay(dt);
 
             this.updateRoad(dt);
             this.updateEnemies(dt);
@@ -266,14 +274,14 @@ export class PADemo extends Component {
         const riverRoot = new Node('Rivers');
         riverRoot.setParent(this.world);
         for (let z = 4; z >= -368; z -= 12) {
-            this.factory.createRoadSegment(roadRoot, z);
+            this.roadSegments.push(this.factory.createRoadSegment(roadRoot, z));
             this.factory.createRiverSegment(riverRoot, z);
         }
-        for (let z = 2; z >= -364; z -= 4) {
+        for (let z = -999; z >= -364; z -= 4) {
             this.roadStripes.push(this.factory.createRoadStripe(roadRoot, z));
         }
 
-        for (let i = 0; i < 74; i++) {
+        for (let i = 0; i < 0; i++) {
             const z = 3 - i * 5;
             const side = i % 2 === 0 ? -1 : 1;
             let scenery: Node;
@@ -379,6 +387,7 @@ export class PADemo extends Component {
 
     private createLevel(): void {
         this.spawnWave(-55, 2, 0.65);
+        this.spawnGiant(-20, -1.35);
         this.spawnGiant(-105, -0.9);
         this.spawnWave(-150, 3, 0.7);
         this.spawnGiant(-215, 1.1);
@@ -854,6 +863,15 @@ export class PADemo extends Component {
 
     private updateRoad(dt: number): void {
         const scrollSpeed = this.getCurrentScrollSpeed();
+        this.factory.updateRoadTextureScroll(scrollSpeed * dt);
+        for (const segment of this.roadSegments) {
+            const position = segment.position;
+            let z = position.z + scrollSpeed * dt;
+            if (z > 18) {
+                z -= 372;
+            }
+            segment.setPosition(position.x, position.y, z);
+        }
         for (const stripe of this.roadStripes) {
             const position = stripe.position;
             let z = position.z + scrollSpeed * dt;
@@ -914,8 +932,11 @@ export class PADemo extends Component {
                         } else {
                             this.showToast('SPEED 5 REQUIRED', new Color(255, 92, 92));
                             this.spawnBurst(new Vec3(this.playerX, 1, this.playerZ), new Color(255, 72, 72), 2.5);
-                            this.playerRoot.active = false;
-                            this.finish(GameState.LOSE);
+                            tween(this.playerRoot)
+                                .to(0.28, { position: new Vec3(this.playerX, 0.35, this.playerZ), eulerAngles: new Vec3(0, 0, -72) }, { easing: 'quadOut' })
+                                .to(0.45, { position: new Vec3(this.playerX, 0.05, this.playerZ + 0.35), eulerAngles: new Vec3(0, 0, -90) }, { easing: 'quadIn' })
+                                .call(() => this.finish(GameState.LOSE))
+                                .start();
                         }
                         continue;
                     }
@@ -924,11 +945,19 @@ export class PADemo extends Component {
                     this.spawnImpactFlash(enemy.node.position, 1.8 + enemy.strength * 0.55);
                     this.spawnBloodParticles(enemy.node.position, enemy.strength);
                     const enemyName = enemy.strength === 3 ? 'BRUTE' : enemy.strength === 2 ? 'GIANT' : 'ENEMY';
-                    if (this.playerSpeed < enemy.strength) {
+                    if (enemy.strength === 1) {
+                        if (this.playerSpeed > 1) {
+                            this.setPlayerSpeed(this.playerSpeed + 1);
+                            this.showToast(`${enemyName}  SPEED +1`, new Color(91, 241, 178));
+                        } else {
+                            this.showToast(`${enemyName} KNOCKED AWAY`, new Color(255, 215, 108));
+                        }
+                    } else if (this.playerSpeed > enemy.strength) {
+                        this.setPlayerSpeed(this.playerSpeed + 1);
+                        this.showToast(`${enemyName}  SPEED +1`, new Color(91, 241, 178));
+                    } else {
                         this.setPlayerSpeed(this.playerSpeed - 1);
                         this.showToast(`${enemyName} TOO STRONG  SPEED -1`, new Color(190, 116, 255));
-                    } else {
-                        this.showToast(`${enemyName} KNOCKED AWAY`, new Color(255, 215, 108));
                     }
                     const knockDistance = enemy.strength === 3 ? 6.8 : enemy.strength === 2 ? 5.9 : 4.8;
                     const knockHeight = enemy.strength === 3 ? 4.2 : enemy.strength === 2 ? 3.6 : 2.9;
@@ -1076,11 +1105,29 @@ export class PADemo extends Component {
         return halfWidth;
     }
 
+    private updateSpeedDecay(dt: number): void {
+        if (this.bonusActive) return;
+        this.speedDecayTimer += dt;
+        while (this.speedDecayTimer >= 4) {
+            this.speedDecayTimer -= 4;
+            this.setPlayerSpeed(this.playerSpeed - 1);
+        }
+    }
+
+    private resolveSpeedCollision(requiredSpeed: number, label: string, color: Color): void {
+        if (this.playerSpeed > requiredSpeed) {
+            this.setPlayerSpeed(this.playerSpeed + 1);
+            this.showToast(`${label}  SPEED +1`, new Color(91, 241, 178));
+        } else {
+            this.setPlayerSpeed(this.playerSpeed - 1);
+            this.showToast(`${label}  SPEED -1`, color);
+        }
+    }
     private setPlayerSpeed(value: number): void {
         if (this.bonusActive) {
             return;
         }
-        const nextSpeed = Math.max(0, Math.min(5, value));
+        const nextSpeed = Math.max(1, Math.min(5, value));
         if (nextSpeed === this.playerSpeed) {
             return;
         }
@@ -1108,6 +1155,17 @@ export class PADemo extends Component {
             new Vec3(1.25, 0.035, 1.25),
             new Color(color.r, color.g, color.b, 150),
         );
+        for (let ring = 0; ring < 3; ring++) {
+            const radius = 0.92 + ring * 0.38;
+            const alpha = 145 - ring * 35;
+            this.factory.createCylinder(
+                'Aura Ring ' + ring,
+                this.speedAura,
+                new Vec3(0, 0.045 + ring * 0.012, 0),
+                new Vec3(radius, 0.012, radius),
+                new Color(color.r, color.g, color.b, alpha),
+            );
+        }
     }
 
     private getSpeedAuraColor(): Color {
@@ -1177,9 +1235,8 @@ export class PADemo extends Component {
             }
             if (touchesPlayer) {
                 if (kind === 'wall') {
-                    if (!this.bonusActive && this.playerSpeed < 2) {
-                        this.setPlayerSpeed(this.playerSpeed - 1);
-                        this.showToast('WALL HIT  SPEED -1', Color.WHITE);
+                    if (!this.bonusActive) {
+                        this.resolveSpeedCollision(2, 'WALL HIT', Color.WHITE);
                     }
                     this.spawnDustCloud(item.node.position);
                     this.shatterWall(item.node);
@@ -1187,15 +1244,13 @@ export class PADemo extends Component {
                     this.spawnMegaDustCloud(item.node.position);
                     this.shatterMegaWall(item.node);
                 } else if (kind === 'fence') {
-                    if (!this.bonusActive && this.playerSpeed < 2) {
-                        this.setPlayerSpeed(this.playerSpeed - 1);
-                        this.showToast('FENCE HIT  SPEED -1', new Color(220, 164, 98));
+                    if (!this.bonusActive) {
+                        this.resolveSpeedCollision(2, 'FENCE HIT', new Color(220, 164, 98));
                     }
                     this.shatterWoodFence(item.node);
                 } else if (kind === 'barrel') {
                     if (!this.bonusActive) {
-                        this.setPlayerSpeed(this.playerSpeed - 1);
-                        this.showToast('BARREL HIT  SPEED -1', new Color(214, 148, 78));
+                        this.resolveSpeedCollision(4, 'BARREL HIT', new Color(214, 148, 78));
                     }
                     this.shatterBarrel(item.node);
                 } else {
@@ -1318,6 +1373,9 @@ export class PADemo extends Component {
         for (let index = 0; index < count; index++) {
             const angle = (Math.PI * 2 * index) / count + strength * 0.13;
             const distance = 0.8 + (index % 4) * 0.28 + strength * 0.12;
+            const splash = this.factory.createBloodSplash(this.effectRoot, new Vec3(position.x, 0.82, position.z - 0.18), new Vec3(0.42, 0.28, 1));
+            splash.setRotationFromEuler(0, 0, angle * 57.3);
+            tween(splash).to(0.42, { scale: new Vec3(0.05, 0.05, 1) }).call(() => splash.destroy()).start();
             const particle = this.factory.createSphere(
                 'Red Impact Particle',
                 this.effectRoot,
@@ -1607,10 +1665,28 @@ export class PADemo extends Component {
             : `SPEED  ${this.playerSpeed}`;
         const progress = Math.max(0, Math.min(1, this.distance / this.totalDistance));
         this.distanceLabel.string = `${Math.floor(progress * 100)}%`;
-        this.drawSpeedSlots(this.progressGraphics, this.bonusActive ? 5 : this.playerSpeed);
+        this.drawContinuousSpeedBar(this.progressGraphics, this.displayedSpeed);
 
     }
 
+    private drawContinuousSpeedBar(graphics: Graphics, speed: number): void {
+        const width = 760;
+        const height = 14;
+        graphics.clear();
+        graphics.fillColor = new Color(42, 58, 65);
+        graphics.roundRect(-width * 0.5, -height * 0.5, width, height, height * 0.5);
+        graphics.fill();
+        const progress = Math.max(0, Math.min(1, speed / 5));
+        graphics.fillColor = this.getSpeedColor(Math.max(1, Math.ceil(speed)));
+        graphics.roundRect(-width * 0.5, -height * 0.5, width * progress, height, height * 0.5);
+        graphics.fill();
+        for (let index = 1; index < 5; index++) {
+            const x = -width * 0.5 + width * index / 5;
+            graphics.fillColor = new Color(230, 240, 240, 210);
+            graphics.rect(x - 1, -height * 0.8, 2, height * 1.6);
+            graphics.fill();
+        }
+    }
     private drawSpeedSlots(graphics: Graphics, speed: number): void {
         graphics.clear();
         const slotWidth = 132;
