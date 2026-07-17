@@ -14,10 +14,15 @@ import {
 
 type PrimitiveKind = 'box' | 'sphere' | 'cylinder' | 'cone' | 'quad';
 
+interface TextureBinding {
+    material: Material;
+    property: string;
+}
+
 export class ProceduralFactory {
     private readonly materials = new Map<string, Material>();
     private readonly textures = new Map<string, Texture2D>();
-    private readonly pendingTextureMaterials = new Map<string, Material[]>();
+    private readonly pendingTextureBindings = new Map<string, TextureBinding[]>();
     private readonly meshes = new Map<PrimitiveKind, Mesh>();
 
     public createBox(
@@ -40,6 +45,37 @@ export class ProceduralFactory {
         tiling = new Vec4(1, 1, 0, 0),
     ): Node {
         return this.createTexturedPrimitive('box', name, parent, position, scale, color, texturePath, tiling, false);
+    }
+
+    public createLitTexturedBox(
+        name: string,
+        parent: Node,
+        position: Vec3,
+        scale: Vec3,
+        color: Color,
+        texturePath: string,
+        normalPath: string,
+        tiling = new Vec4(1, 1, 0, 0),
+        roughness = 0.88,
+        normalStrength = 0.85,
+    ): Node {
+        const node = new Node(name);
+        node.setParent(parent);
+        node.setPosition(position);
+        node.setScale(scale);
+        const renderer = node.addComponent(MeshRenderer);
+        renderer.mesh = this.getMesh('box');
+        // Keep scene construction alive on render backends without the standard normal-map technique.
+        try {
+            renderer.setMaterial(
+                this.getLitTexturedMaterial(texturePath, normalPath, color, tiling, roughness, normalStrength),
+                0,
+            );
+        } catch (error) {
+            console.warn(`Lit material unavailable for ${texturePath}; using albedo fallback`, error);
+            renderer.setMaterial(this.getTexturedMaterial(texturePath, color, tiling, false), 0);
+        }
+        return node;
     }
 
     public createTexturedSphere(
@@ -77,7 +113,7 @@ export class ProceduralFactory {
             new Vec3(55, 26, 1),
             Color.WHITE,
             'textures/mountain_background',
-            new Vec4(1, 1, 0, 0),
+            new Vec4(1, -1, 0, 1),
             false,
         );
     }
@@ -167,6 +203,14 @@ export class ProceduralFactory {
         return root;
     }
 
+    private getEnemyFrameTiling(strength: number): Vec4 {
+        const frameWidth = 1 / 7;
+        const frameHeight = 1 / 6;
+        const column = 0;
+        const row = 1;
+        return new Vec4(frameWidth, -frameHeight, column * frameWidth, 1 - row * frameHeight);
+    }
+
     public createEnemy(name: string, parent: Node, strength = 1): Node {
         const root = new Node(name);
         root.setParent(parent);
@@ -187,8 +231,8 @@ export class ProceduralFactory {
             new Vec3(0, 0.86, -0.04),
             new Vec3(1.7, 2, 1),
             textureTint,
-            'textures/enemy_character',
-            new Vec4(1, -1, 0, 1),
+            'textures/enemy_character_sheet',
+            this.getEnemyFrameTiling(strength),
             true,
         );
 
@@ -218,14 +262,17 @@ export class ProceduralFactory {
         const segment = new Node('RoadSegment');
         segment.setParent(parent);
         segment.setPosition(0, 0, z);
-        this.createTexturedBox(
+        this.createLitTexturedBox(
             'Road',
             segment,
             new Vec3(0, -0.12, 0),
             new Vec3(6.5, 0.2, 12),
-            new Color(168, 178, 184),
-            'textures/road_stone',
+            Color.WHITE,
+            'textures/road_pavers',
+            'textures/road_pavers_normal',
             new Vec4(3, 6, 0, 0),
+            0.92,
+            0.72,
         );
         this.createBox('RailL', segment, new Vec3(-3.35, 0.42, 0), new Vec3(0.18, 0.7, 12), new Color(48, 196, 186));
         this.createBox('RailR', segment, new Vec3(3.35, 0.42, 0), new Vec3(0.18, 0.7, 12), new Color(48, 196, 186));
@@ -351,30 +398,59 @@ export class ProceduralFactory {
         return material;
     }
 
-    private attachTexture(material: Material, texturePath: string): void {
+    private getLitTexturedMaterial(
+        texturePath: string,
+        normalPath: string,
+        color: Color,
+        tiling: Vec4,
+        roughness: number,
+        normalStrength: number,
+    ): Material {
+        const key = `lit:${texturePath}:${normalPath}:${color.r}-${color.g}-${color.b}:${tiling.x}-${tiling.y}:${roughness}:${normalStrength}`;
+        const cached = this.materials.get(key);
+        if (cached) {
+            return cached;
+        }
+        const material = new Material();
+        material.initialize({
+            effectName: 'builtin-standard',
+            defines: { USE_ALBEDO_MAP: true, USE_NORMAL_MAP: true },
+        });
+        material.setProperty('mainColor', color);
+        material.setProperty('tilingOffset', tiling);
+        material.setProperty('roughness', roughness);
+        material.setProperty('metallic', 0);
+        material.setProperty('normalStrength', normalStrength);
+        this.materials.set(key, material);
+        this.attachTexture(material, texturePath, 'mainTexture');
+        this.attachTexture(material, normalPath, 'normalMap');
+        return material;
+    }
+
+    private attachTexture(material: Material, texturePath: string, property = 'mainTexture'): void {
         const texture = this.textures.get(texturePath);
         if (texture) {
-            material.setProperty('mainTexture', texture);
+            material.setProperty(property, texture);
             return;
         }
 
-        const pending = this.pendingTextureMaterials.get(texturePath);
+        const pending = this.pendingTextureBindings.get(texturePath);
         if (pending) {
-            pending.push(material);
+            pending.push({ material, property });
             return;
         }
 
-        this.pendingTextureMaterials.set(texturePath, [material]);
+        this.pendingTextureBindings.set(texturePath, [{ material, property }]);
         resources.load(`${texturePath}/texture`, Texture2D, (error, loadedTexture) => {
-            const waitingMaterials = this.pendingTextureMaterials.get(texturePath) ?? [];
-            this.pendingTextureMaterials.delete(texturePath);
+            const waitingBindings = this.pendingTextureBindings.get(texturePath) ?? [];
+            this.pendingTextureBindings.delete(texturePath);
             if (error || !loadedTexture) {
                 console.warn(`Unable to load texture ${texturePath}`, error);
                 return;
             }
             loadedTexture.setWrapMode(0 as any, 0 as any);
             this.textures.set(texturePath, loadedTexture);
-            waitingMaterials.forEach((waitingMaterial) => waitingMaterial.setProperty('mainTexture', loadedTexture));
+            waitingBindings.forEach((binding) => binding.material.setProperty(binding.property, loadedTexture));
         });
     }
 

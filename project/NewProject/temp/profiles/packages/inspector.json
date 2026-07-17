@@ -18,5 +18,10 @@
     "texture": {
       "mipfilter": "linear"
     }
+  },
+  "dbffb660-afb8-4ddb-b4a9-e773034aa1c0@6c48a": {
+    "texture": {
+      "mipfilter": "none"
+    }
   }
 }

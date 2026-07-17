@@ -5,6 +5,7 @@ import {
     Canvas,
     Color,
     Component,
+    DirectionalLight,
     director,
     EventMouse,
     EventTouch,
@@ -16,6 +17,9 @@ import {
     Layers,
     Node,
     ResolutionPolicy,
+    resources,
+    Sprite,
+    SpriteFrame,
     tween,
     UITransform,
     Vec3,
@@ -29,6 +33,7 @@ const { ccclass } = _decorator;
 
 enum GameState {
     READY,
+    INTRO,
     PLAYING,
     WIN,
     LOSE,
@@ -62,9 +67,19 @@ export class PADemo extends Component {
 
     private state = GameState.READY;
     private world!: Node;
+    private cameraNode!: Node;
+    private backgroundNode!: Node;
     private playerRoot!: Node;
     private effectRoot!: Node;
     private speedAura!: Node;
+    private introRoot!: Node;
+    private introTimer = 0;
+    private readonly introHoldDuration = 2;
+    private readonly introPullbackDuration = 7;
+    private readonly cameraHomePosition = new Vec3(0, 9.4, 14.2);
+    private readonly cameraHomeTarget = new Vec3(0, 0.8, -5.5);
+    private readonly introCameraPosition = new Vec3(8, 7.8, -335);
+    private readonly introCameraTarget = new Vec3(0, 2.7, -354);
     private unitNodes: Node[] = [];
     private enemies: EnemyEntity[] = [];
     private walls: TrackItemEntity[] = [];
@@ -95,6 +110,10 @@ export class PADemo extends Component {
     private speedLabel!: Label;
     private startOverlayNode!: Node;
     private resultOverlayNode!: Node;
+    private dragHandNode!: Node;
+    private victoryRaysNode!: Node;
+    private victoryBadgeNode!: Node;
+    private defeatBadgeNode!: Node;
     private titleLabel!: Label;
     private subtitleLabel!: Label;
     private resultLabel!: Label;
@@ -107,6 +126,9 @@ export class PADemo extends Component {
     private toastLabel!: Label;
     private toastTimer = 0;
     private readonly shownToastMessages = new Set<string>();
+    private shakeTime = 0;
+    private shakeDuration = 0;
+    private shakeStrength = 0;
 
     protected start(): void {
         view.setDesignResolutionSize(1280, 720, ResolutionPolicy.SHOW_ALL);
@@ -129,6 +151,14 @@ export class PADemo extends Component {
         const dt = Math.min(deltaTime, 0.05);
         this.elapsed += dt;
         this.animateUnits();
+        if (this.state === GameState.READY && this.dragHandNode) {
+            this.dragHandNode.setPosition(Math.sin(this.elapsed * 2.7) * 80, -88, 0);
+            const handPulse = 0.82 + Math.sin(this.elapsed * 5.4) * 0.05;
+            this.dragHandNode.setScale(handPulse, handPulse, 1);
+        }
+        if (this.state === GameState.WIN && this.victoryRaysNode?.active) {
+            this.victoryRaysNode.setRotationFromEuler(0, 0, this.elapsed * 12);
+        }
 
         if (this.toastTimer > 0) {
             this.toastTimer -= dt;
@@ -137,7 +167,9 @@ export class PADemo extends Component {
             }
         }
 
-        if (this.state === GameState.PLAYING) {
+        if (this.state === GameState.INTRO) {
+            this.updateIntro(deltaTime);
+        } else if (this.state === GameState.PLAYING) {
             this.playerX += (this.targetPlayerX - this.playerX) * Math.min(1, dt * 14);
             this.playerRoot.setPosition(this.playerX, 0, this.playerZ);
             this.distance += this.getCurrentScrollSpeed() * dt;
@@ -157,6 +189,31 @@ export class PADemo extends Component {
             this.updateRoad(dt * 0.35);
             this.updateHud();
         }
+        this.updateCameraShake(dt);
+    }
+
+    private triggerCameraShake(strength: number, duration: number): void {
+        if (strength >= this.shakeStrength || this.shakeTime <= 0) {
+            this.shakeStrength = strength;
+            this.shakeDuration = duration;
+        }
+        this.shakeTime = Math.max(this.shakeTime, duration);
+    }
+
+    private updateCameraShake(dt: number): void {
+        if (!this.cameraNode || this.state === GameState.INTRO || this.shakeTime <= 0) {
+            return;
+        }
+        this.shakeTime = Math.max(0, this.shakeTime - dt);
+        const fade = this.shakeDuration > 0 ? this.shakeTime / this.shakeDuration : 0;
+        const amount = this.shakeStrength * fade;
+        const offset = new Vec3((this.seededRandom(this.elapsed * 91) - 0.5) * amount, (this.seededRandom(this.elapsed * 137) - 0.5) * amount, 0);
+        this.cameraNode.setPosition(this.cameraHomePosition.x + offset.x, this.cameraHomePosition.y + offset.y, this.cameraHomePosition.z);
+        if (this.shakeTime <= 0) {
+            this.shakeStrength = 0;
+            this.cameraNode.setPosition(this.cameraHomePosition);
+            this.cameraNode.lookAt(this.cameraHomeTarget);
+        }
     }
 
     private buildScene(): void {
@@ -171,19 +228,21 @@ export class PADemo extends Component {
         this.effectRoot.setParent(this.world);
 
         this.createCamera(scene);
+        this.createLighting(scene);
         this.createEnvironment();
         this.createPlayer();
         this.createLevel();
+        this.createIntroRescueTarget();
         this.createHud(scene);
         this.updateHud();
     }
 
     private createCamera(scene: Node): void {
-        const cameraNode = new Node('Game Camera');
-        cameraNode.setParent(scene);
-        cameraNode.setPosition(0, 9.4, 14.2);
-        cameraNode.lookAt(new Vec3(0, 0.8, -5.5));
-        const camera = cameraNode.addComponent(Camera);
+        this.cameraNode = new Node('Game Camera');
+        this.cameraNode.setParent(scene);
+        this.cameraNode.setPosition(this.cameraHomePosition);
+        this.cameraNode.lookAt(this.cameraHomeTarget);
+        const camera = this.cameraNode.addComponent(Camera);
         camera.fov = 46;
         camera.near = 0.1;
         camera.far = 220;
@@ -191,21 +250,30 @@ export class PADemo extends Component {
         camera.visibility = Layers.Enum.DEFAULT;
     }
 
+    private createLighting(scene: Node): void {
+        const lightNode = new Node('World Sun');
+        lightNode.setParent(scene);
+        lightNode.setRotationFromEuler(-52, -32, 0);
+        const light = lightNode.addComponent(DirectionalLight);
+        light.color = new Color(255, 244, 218);
+        light.illuminance = 52000;
+    }
+
     private createEnvironment(): void {
-        this.factory.createBackgroundQuad(this.world);
+        this.backgroundNode = this.factory.createBackgroundQuad(this.world);
         const roadRoot = new Node('Road');
         roadRoot.setParent(this.world);
         const riverRoot = new Node('Rivers');
         riverRoot.setParent(this.world);
-        for (let z = 4; z >= -164; z -= 12) {
+        for (let z = 4; z >= -368; z -= 12) {
             this.factory.createRoadSegment(roadRoot, z);
             this.factory.createRiverSegment(riverRoot, z);
         }
-        for (let z = 2; z >= -160; z -= 4) {
+        for (let z = 2; z >= -364; z -= 4) {
             this.roadStripes.push(this.factory.createRoadStripe(roadRoot, z));
         }
 
-        for (let i = 0; i < 48; i++) {
+        for (let i = 0; i < 74; i++) {
             const z = 3 - i * 5;
             const side = i % 2 === 0 ? -1 : 1;
             let scenery: Node;
@@ -271,6 +339,36 @@ export class PADemo extends Component {
         return root;
     }
 
+    private createIntroRescueTarget(): void {
+        this.introRoot = new Node('Rescue Mission Preview');
+        this.introRoot.setParent(this.world);
+        this.introRoot.setPosition(0, 0, -354);
+
+        const cage = new Node('Princess Cage');
+        cage.setParent(this.introRoot);
+        cage.setPosition(1.1, 0, -7.2);
+        const iron = new Color(76, 86, 92);
+        const highlight = new Color(158, 175, 181);
+        this.factory.createBox('Cage Base', cage, new Vec3(0, 0.12, 0), new Vec3(3.8, 0.24, 2.8), iron);
+        this.factory.createBox('Cage Roof', cage, new Vec3(0, 3.65, 0), new Vec3(3.8, 0.24, 2.8), iron);
+        for (let index = 0; index < 5; index++) {
+            const x = -1.6 + index * 0.8;
+            this.factory.createBox('Cage Bar', cage, new Vec3(x, 1.88, 1.32), new Vec3(0.1, 3.35, 0.1), index % 2 === 0 ? highlight : iron);
+            this.factory.createBox('Cage Bar', cage, new Vec3(x, 1.88, -1.32), new Vec3(0.1, 3.35, 0.1), iron);
+        }
+        this.factory.createBox('Cage Side', cage, new Vec3(-1.82, 1.88, 0), new Vec3(0.1, 3.35, 2.7), iron);
+        this.factory.createBox('Cage Side', cage, new Vec3(1.82, 1.88, 0), new Vec3(0.1, 3.35, 2.7), iron);
+
+        const princess = new Node('Princess');
+        princess.setParent(cage);
+        princess.setPosition(0, 0.15, 0.15);
+        this.factory.createCone('Princess Dress', princess, new Vec3(0, 0.85, 0), new Vec3(1.05, 1.7, 1.05), new Color(244, 112, 183));
+        this.factory.createSphere('Princess Head', princess, new Vec3(0, 1.95, 0), new Vec3(0.58, 0.58, 0.58), new Color(255, 216, 181));
+        this.factory.createSphere('Princess Hair', princess, new Vec3(0, 2.04, 0.2), new Vec3(0.68, 0.72, 0.54), new Color(245, 198, 68));
+        this.factory.createCone('Princess Crown', princess, new Vec3(0, 2.62, 0), new Vec3(0.5, 0.55, 0.5), new Color(255, 224, 82));
+        this.introRoot.active = false;
+    }
+
     private createPlayer(): void {
         this.playerRoot = new Node('Squad');
         this.playerRoot.setParent(this.world);
@@ -322,19 +420,21 @@ export class PADemo extends Component {
         const node = new Node('White Wall');
         node.setParent(this.world);
         node.setPosition(x, 0, z);
-        const color = new Color(242, 246, 248);
         this.factory.createCylinder('Wall Base', node, new Vec3(0, 0.025, 0), new Vec3(1.15, 0.04, 0.7), new Color(70, 155, 255));
         for (let row = 0; row < 3; row++) {
             for (let column = 0; column < 3; column++) {
                 const offset = row % 2 === 0 ? 0 : 0.12;
-                this.factory.createTexturedBox(
+                this.factory.createLitTexturedBox(
                     'Wall Block',
                     node,
                     new Vec3((column - 1) * 0.48 + offset, 0.28 + row * 0.48, 0),
                     new Vec3(0.44, 0.42, 0.32),
-                    color,
+                    Color.WHITE,
                     'textures/white_brick',
-                    new Vec4(1, 1, 0, 0),
+                    'textures/white_brick_normal',
+                    new Vec4(0.32, 0.32, column * 0.32, row * 0.32),
+                    0.9,
+                    0.9,
                 );
             }
         }
@@ -345,7 +445,6 @@ export class PADemo extends Component {
         const node = new Node('Bonus Mega Wall');
         node.setParent(this.world);
         node.setPosition(0, 0, z);
-        const wallColor = new Color(246, 248, 250);
         this.factory.createCylinder(
             'Mega Wall Base',
             node,
@@ -356,14 +455,17 @@ export class PADemo extends Component {
         for (let row = 0; row < 4; row++) {
             for (let column = 0; column < 5; column++) {
                 const offset = row % 2 === 0 ? 0 : 0.18;
-                this.factory.createTexturedBox(
+                this.factory.createLitTexturedBox(
                     'Mega Wall Block',
                     node,
                     new Vec3((column - 2) * 0.68 + offset, 0.34 + row * 0.58, 0),
                     new Vec3(0.62, 0.52, 0.48),
-                    row % 2 === 0 ? wallColor : new Color(226, 232, 236),
+                    Color.WHITE,
                     'textures/mega_stone',
-                    new Vec4(1, 1, 0, 0),
+                    'textures/mega_stone_normal',
+                    new Vec4(0.2, 0.25, column * 0.2, row * 0.25),
+                    0.94,
+                    1.05,
                 );
             }
         }
@@ -536,24 +638,41 @@ export class PADemo extends Component {
         this.createLabel(this.startOverlayNode, 'Title', 'SQUAD RUSH', 64, new Color(105, 239, 255), new Vec3(0, 115), 760, 90);
         this.createLabel(this.startOverlayNode, 'Subtitle', 'SMASH THE LINE', 25, new Color(255, 215, 108), new Vec3(0, 55), 560, 45);
         this.createLabel(this.startOverlayNode, 'Hint', 'DRAG TO MOVE\nTAP TO START', 24, Color.WHITE, new Vec3(0, -35), 520, 80);
+        this.dragHandNode = this.createResourceSprite(this.startOverlayNode, 'Drag Hand', 'ui/drag_hand', 80, 102);
+        this.dragHandNode.setPosition(0, -88);
         const startCta = this.createPanel(this.startOverlayNode, 'Start CTA', 430, 90, new Color(48, 208, 134, 255));
-        startCta.setPosition(0, -155);
-        this.createLabel(startCta, 'CTA Label', 'START MISSION', 32, new Color(7, 34, 29), new Vec3(), 390, 62);
+        this.addPanelArt(startCta, 'ui/gold_panel', 430, 90);
+        startCta.setPosition(0, -205);
+        this.createLabel(startCta, 'CTA Label', 'START MISSION', 32, new Color(7, 34, 29), new Vec3(-28, 0), 330, 62);
+        const startArrow = this.createResourceSprite(startCta, 'Start Arrow', 'ui/gold_arrow', 64, 50);
+        startArrow.setPosition(170, 0);
 
         this.resultOverlayNode = this.createFullscreenOverlay(canvasNode, 'Result Overlay', new Color(7, 18, 24, 232));
-        this.titleLabel = this.createLabel(this.resultOverlayNode, 'Result Title', '', 58, Color.WHITE, new Vec3(0, 115), 900, 90);
-        this.subtitleLabel = this.createLabel(this.resultOverlayNode, 'Result Subtitle', '', 24, new Color(255, 215, 108), new Vec3(0, 55), 680, 44);
-        this.resultLabel = this.createLabel(this.resultOverlayNode, 'Result Detail', '', 28, Color.WHITE, new Vec3(0, -5), 720, 55);
-        this.hintLabel = this.createLabel(this.resultOverlayNode, 'Result Hint', '', 22, new Color(190, 204, 211), new Vec3(0, -65), 640, 44);
+        this.victoryRaysNode = this.createResourceSprite(this.resultOverlayNode, 'Victory Rays', 'ui/victory_rays', 440, 440);
+        this.victoryRaysNode.setPosition(0, 112);
+        this.victoryRaysNode.active = false;
+        this.victoryBadgeNode = this.createResourceSprite(this.resultOverlayNode, 'Victory Badge', 'ui/victory', 300, 300);
+        this.victoryBadgeNode.setPosition(0, 112);
+        this.victoryBadgeNode.active = false;
+        this.defeatBadgeNode = this.createResourceSprite(this.resultOverlayNode, 'Defeat Badge', 'ui/defeat', 390, 272);
+        this.defeatBadgeNode.setPosition(0, 112);
+        this.defeatBadgeNode.active = false;
+        this.titleLabel = this.createLabel(this.resultOverlayNode, 'Result Title', '', 34, Color.WHITE, new Vec3(0, -58), 900, 44);
+        this.subtitleLabel = this.createLabel(this.resultOverlayNode, 'Result Subtitle', '', 24, new Color(255, 215, 108), new Vec3(0, -98), 680, 38);
+        this.resultLabel = this.createLabel(this.resultOverlayNode, 'Result Detail', '', 27, Color.WHITE, new Vec3(0, -137), 720, 40);
+        this.hintLabel = this.createLabel(this.resultOverlayNode, 'Result Hint', '', 21, new Color(190, 204, 211), new Vec3(0, -172), 640, 32);
 
         this.ctaNode = this.createPanel(this.resultOverlayNode, 'Replay CTA', 460, 104, new Color(48, 208, 134, 255));
-        this.ctaNode.setPosition(0, -155);
+        this.addPanelArt(this.ctaNode, 'ui/gold_panel', 460, 104);
+        this.ctaNode.setPosition(0, -238);
         this.ctaButton = this.ctaNode.addComponent(Button);
         this.ctaButton.transition = Button.Transition.SCALE;
         this.ctaButton.zoomScale = 0.96;
         this.ctaButton.duration = 0.08;
         this.ctaNode.on(Button.EventType.CLICK, this.onCtaClick, this);
-        this.ctaLabel = this.createLabel(this.ctaNode, 'CTA Label', '', 34, new Color(7, 34, 29), new Vec3(), 420, 70);
+        this.ctaLabel = this.createLabel(this.ctaNode, 'CTA Label', '', 34, new Color(7, 34, 29), new Vec3(-28, 0), 360, 70);
+        const replayArrow = this.createResourceSprite(this.ctaNode, 'Replay Arrow', 'ui/gold_arrow', 64, 50);
+        replayArrow.setPosition(185, 0);
         this.resultOverlayNode.setPosition(0, -1600, 0);
     }
 
@@ -566,6 +685,29 @@ export class PADemo extends Component {
         graphics.fillColor = color;
         graphics.rect(-640, -360, 1280, 720);
         graphics.fill();
+        return node;
+    }
+
+    private addPanelArt(parent: Node, path: string, width: number, height: number): void {
+        const art = this.createResourceSprite(parent, `${parent.name} Art`, path, width, height);
+        art.setPosition(0, 0, -0.01);
+        art.setSiblingIndex(0);
+    }
+
+    private createResourceSprite(parent: Node, name: string, path: string, width: number, height: number): Node {
+        const node = new Node(name);
+        node.layer = Layers.Enum.UI_2D;
+        node.setParent(parent);
+        node.addComponent(UITransform).setContentSize(width, height);
+        const sprite = node.addComponent(Sprite);
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        resources.load(`${path}/spriteFrame`, SpriteFrame, (error, spriteFrame) => {
+            if (error || !spriteFrame) {
+                console.warn(`Unable to load UI sprite ${path}`, error);
+                return;
+            }
+            sprite.spriteFrame = spriteFrame;
+        });
         return node;
     }
 
@@ -647,12 +789,52 @@ export class PADemo extends Component {
             return;
         }
         if (this.state === GameState.READY) {
-            this.state = GameState.PLAYING;
-            this.startOverlayNode.active = false;
-            console.info('[PA] challenge_started');
+            this.startIntro();
+            return;
+        }
+        if (this.state !== GameState.PLAYING) {
+            return;
         }
         this.dragging = true;
         this.lastPointerX = x;
+    }
+
+    private startIntro(): void {
+        this.state = GameState.INTRO;
+        this.introTimer = 0;
+        this.dragging = false;
+        this.startOverlayNode.active = false;
+        this.playerRoot.active = false;
+        this.introRoot.active = true;
+        this.backgroundNode.active = false;
+        this.cameraNode.setPosition(this.introCameraPosition);
+        this.cameraNode.lookAt(this.introCameraTarget);
+        this.showToast('RESCUE THE PRINCESS', new Color(255, 214, 108));
+    }
+
+    private updateIntro(dt: number): void {
+        this.introTimer += Math.min(dt, 0.05);
+        const pullbackProgress = Math.max(
+            0,
+            Math.min(1, (this.introTimer - this.introHoldDuration) / this.introPullbackDuration),
+        );
+        const eased = 1 - Math.pow(1 - pullbackProgress, 3);
+        const position = new Vec3();
+        const target = new Vec3();
+        Vec3.lerp(position, this.introCameraPosition, this.cameraHomePosition, eased);
+        Vec3.lerp(target, this.introCameraTarget, this.cameraHomeTarget, eased);
+        this.cameraNode.setPosition(position);
+        this.cameraNode.lookAt(target);
+
+        if (pullbackProgress >= 1) {
+            this.cameraNode.setPosition(this.cameraHomePosition);
+            this.cameraNode.lookAt(this.cameraHomeTarget);
+            this.introRoot.destroy();
+            this.backgroundNode.active = true;
+            this.playerRoot.active = true;
+            this.state = GameState.PLAYING;
+            console.info('[PA] challenge_started');
+        }
     }
 
     private onCtaClick(): void {
@@ -676,7 +858,7 @@ export class PADemo extends Component {
             const position = stripe.position;
             let z = position.z + scrollSpeed * dt;
             if (z > 7) {
-                z -= 164;
+                z -= 372;
             }
             stripe.setPosition(position.x, position.y, z);
         }
@@ -684,7 +866,7 @@ export class PADemo extends Component {
             const position = scenery.position;
             let z = position.z + scrollSpeed * dt;
             if (z > 12) {
-                z -= 240;
+                z -= 375;
             }
             scenery.setPosition(position.x, position.y, z);
         }
@@ -709,10 +891,12 @@ export class PADemo extends Component {
                 if (touchesSquad) {
                     if (enemy.finalBoss) {
                         enemy.alive = false;
+                        this.triggerCameraShake(0.42, 0.65);
                         this.spawnImpactFlash(enemy.node.position, 4.8);
                         if (this.playerSpeed === 5) {
                             this.showToast('MAX SPEED  BOSS DEFEATED', new Color(255, 92, 92));
                             this.spawnBurst(enemy.node.position, new Color(255, 72, 72), 3.2);
+                            this.spawnBossDefeatParticles(enemy.node.position);
                             tween(enemy.node)
                                 .to(
                                     0.65,
@@ -736,6 +920,7 @@ export class PADemo extends Component {
                         continue;
                     }
                     enemy.alive = false;
+                    if (enemy.strength >= 2) this.triggerCameraShake(enemy.strength === 3 ? 0.22 : 0.16, 0.32);
                     this.spawnImpactFlash(enemy.node.position, 1.8 + enemy.strength * 0.55);
                     this.spawnBloodParticles(enemy.node.position, enemy.strength);
                     const enemyName = enemy.strength === 3 ? 'BRUTE' : enemy.strength === 2 ? 'GIANT' : 'ENEMY';
@@ -987,11 +1172,12 @@ export class PADemo extends Component {
             const objectIsShattering = touchesPlayer && kind !== 'pickup';
             if (objectIsShattering) {
                 const flashSize = kind === 'megaWall' ? 4.2 : kind === 'wall' ? 2.6 : kind === 'barrel' ? 2.4 : 2.2;
+                this.triggerCameraShake(kind === 'barrel' ? 0.18 : kind === 'megaWall' ? 0.28 : 0.1, kind === 'megaWall' ? 0.42 : 0.24);
                 this.spawnImpactFlash(item.node.position, flashSize);
             }
             if (touchesPlayer) {
                 if (kind === 'wall') {
-                    if (!this.bonusActive) {
+                    if (!this.bonusActive && this.playerSpeed < 2) {
                         this.setPlayerSpeed(this.playerSpeed - 1);
                         this.showToast('WALL HIT  SPEED -1', Color.WHITE);
                     }
@@ -1001,7 +1187,7 @@ export class PADemo extends Component {
                     this.spawnMegaDustCloud(item.node.position);
                     this.shatterMegaWall(item.node);
                 } else if (kind === 'fence') {
-                    if (!this.bonusActive) {
+                    if (!this.bonusActive && this.playerSpeed < 2) {
                         this.setPlayerSpeed(this.playerSpeed - 1);
                         this.showToast('FENCE HIT  SPEED -1', new Color(220, 164, 98));
                     }
@@ -1356,6 +1542,33 @@ export class PADemo extends Component {
             .start();
     }
 
+    private spawnBossDefeatParticles(position: Readonly<Vec3>): void {
+        const colors = [new Color(255, 45, 55), new Color(220, 20, 35), new Color(255, 118, 74)];
+        for (let index = 0; index < 24; index++) {
+            const angle = (Math.PI * 2 * index) / 24 + 0.18;
+            const distance = 2.4 + (index % 6) * 0.55;
+            const particle = this.factory.createBox(
+                'Boss Defeat Particle',
+                this.effectRoot,
+                new Vec3(position.x, 1.1 + (index % 4) * 0.18, position.z),
+                new Vec3(0.1 + (index % 3) * 0.045, 0.18 + (index % 2) * 0.06, 0.08),
+                colors[index % colors.length],
+            );
+            particle.setRotationFromEuler(index * 19, index * 31, index * 47);
+            tween(particle)
+                .to(0.72 + (index % 5) * 0.08, {
+                    position: new Vec3(
+                        position.x + Math.cos(angle) * distance,
+                        1.3 + (index % 6) * 0.45,
+                        position.z + Math.sin(angle) * distance,
+                    ),
+                    scale: new Vec3(0.035, 0.035, 0.035),
+                    eulerAngles: new Vec3(index * 170, index * 230, index * 290),
+                }, { easing: 'quadOut' })
+                .call(() => particle.destroy())
+                .start();
+        }
+    }
     private spawnBurst(position: Readonly<Vec3>, color: Color, size: number): void {
         for (let i = 0; i < 6; i++) {
             const angle = (Math.PI * 2 * i) / 6;
@@ -1394,8 +1607,31 @@ export class PADemo extends Component {
             : `SPEED  ${this.playerSpeed}`;
         const progress = Math.max(0, Math.min(1, this.distance / this.totalDistance));
         this.distanceLabel.string = `${Math.floor(progress * 100)}%`;
-        this.drawBar(this.progressGraphics, 760, 12, progress, new Color(77, 227, 201), new Color(42, 58, 65));
+        this.drawSpeedSlots(this.progressGraphics, this.bonusActive ? 5 : this.playerSpeed);
 
+    }
+
+    private drawSpeedSlots(graphics: Graphics, speed: number): void {
+        graphics.clear();
+        const slotWidth = 132;
+        const gap = 12;
+        const left = -((slotWidth * 5 + gap * 4) * 0.5);
+        for (let index = 0; index < 5; index++) {
+            const active = index < speed;
+            graphics.fillColor = active ? this.getSpeedColor(index + 1) : new Color(42, 58, 65);
+            graphics.roundRect(left + index * (slotWidth + gap), -7, slotWidth, 14, 7);
+            graphics.fill();
+        }
+    }
+
+    private getSpeedColor(speed: number): Color {
+        switch (speed) {
+            case 1: return new Color(67, 224, 125);
+            case 2: return new Color(70, 155, 255);
+            case 3: return new Color(181, 84, 245);
+            case 4: return new Color(247, 198, 74);
+            default: return new Color(255, 67, 75);
+        }
     }
 
     private drawBar(graphics: Graphics, width: number, height: number, value: number, fill: Color, background: Color): void {
@@ -1418,7 +1654,17 @@ export class PADemo extends Component {
         this.endTimer = 0;
 
         const won = result === GameState.WIN;
-        this.titleLabel.string = won ? 'VICTORY' : 'MISSION FAILED';
+        this.victoryRaysNode.active = won;
+        this.victoryBadgeNode.active = won;
+        this.defeatBadgeNode.active = !won;
+        const badge = won ? this.victoryBadgeNode : this.defeatBadgeNode;
+        badge.setScale(0.55, 0.55, 1);
+        tween(badge).to(0.32, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' }).start();
+        if (won) {
+            this.victoryRaysNode.setScale(0.72, 0.72, 1);
+            tween(this.victoryRaysNode).to(0.45, { scale: new Vec3(1, 1, 1) }, { easing: 'quadOut' }).start();
+        }
+        this.titleLabel.string = won ? 'ROYAL RESCUE COMPLETE' : 'RESCUE FAILED';
         this.titleLabel.color = won ? new Color(255, 220, 105) : new Color(255, 112, 112);
         this.subtitleLabel.string = won
             ? (this.bonusCompleted ? 'BONUS COMPLETE' : 'FINISH LINE REACHED')
